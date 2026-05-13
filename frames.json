@@ -1,0 +1,44 @@
+{
+  "title": "Your Comic Title",
+  "description": "Replace this with your comic's description. Used in social meta tags.",
+  "frames": [
+    {
+      "id": "cover",
+      "template": "cover",
+      "image": "images/placeholder.svg",
+      "version": 1
+    },
+    {
+      "id": "c01.f00",
+      "template": "chapter-break",
+      "version": 1
+    },
+    {
+      "id": "c01.f01",
+      "template": "hero-caption",
+      "image": "images/placeholder.svg",
+      "version": 1
+    },
+    {
+      "id": "c01.f02",
+      "template": "hero-speech",
+      "image": "images/placeholder.svg",
+      "version": 1
+    },
+    {
+      "id": "c01.f03",
+      "template": "narration-band",
+      "version": 1
+    },
+    {
+      "id": "c01.f04",
+      "template": "press-card",
+      "version": 1
+    },
+    {
+      "id": "end.cta",
+      "template": "cta-card",
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Image placeholder — drop your image here">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a1422"/>
+      <stop offset="1" stop-color="#0E0A06"/>
+    </linearGradient>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M 80 0 L 0 0 0 80" fill="none" stroke="rgba(212,168,67,0.06)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#grid)"/>
+  <g transform="translate(800 420)" text-anchor="middle" fill="#A89D7E" font-family="'Special Elite', 'Courier New', monospace">
+    <text font-size="48" letter-spacing="6">DROP IMAGE HERE</text>
+    <text y="64" font-size="22" letter-spacing="3" fill="#5C5240">— or click panel and paste a file —</text>
+  </g>
+  <g transform="translate(800 540)" text-anchor="middle">
+    <circle cx="-40" cy="0" r="8" fill="#D4A843"/>
+    <circle cx="0"   cy="0" r="8" fill="#D4A843"/>
+    <circle cx="40"  cy="0" r="8" fill="#D4A843"/>
+  </g>
+</svg>

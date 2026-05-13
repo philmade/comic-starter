@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Editor exports (regenerated locally; not source)
+*.zip
+
+# Local backup / internal planning docs (not part of the framework)
+comic.html.palomar-backup
+MIGRATION_PLAN.md
+
+# Archive directory keeps prior image versions locally; don't ship the contents
+images/_archive/*
+!images/_archive/.gitkeep
