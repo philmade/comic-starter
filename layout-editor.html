@@ -17,8 +17,10 @@
     · web comic = master; layout = thin overlay (references shared images/)
     · import walks .comic's children -> frame-groups (image + its primitives,
       positions from each primitive's class), in story order
-    · AUTO-FLOW: full-bleed-width frames stacked down each page; new page when
-      full. Frame + its primitives are one nested DOM group -> they move as one.
+    · AUTO-FLOW: 3 frames per page, each kept at its true aspect ratio and
+      centred in its row inside the safe area (gutters, not forced full-bleed --
+      you decide the crop later). Frame + its primitives are one nested DOM
+      group -> they move as one. Cover gets its own full page.
     · Phase 1 (broad): drag/resize whole frames, page through. [this build]
     · Phase 2 (fine): drag individual primitives, bubble tails. [next]
 
@@ -161,24 +163,32 @@
     // Real aspect ratios (parsed doc images aren't laid out, so preload them).
     const ar = await preloadAR([...new Set(beats.map(b => b.src).filter(Boolean))]);
 
-    // Auto-flow: full-bleed-width frames stacked down the 163x246 canvas.
-    const PW = 163, PH = 246; const pages = [{ frames: [] }]; let used = 0;
-    beats.forEach(b => {
+    // Auto-flow: cover gets its own full-bleed page; everything else flows
+    // 3 AR-preserved frames per page, each centred in its row inside the safe
+    // area (room for bleed/gutters; final crop decided later).
+    const PW = 163, PH = 246, SAFE = 8;                       // mm: bleed(3)+quiet(5)
+    const safeY = SAFE / PH * 100, safeW = (PW - 2 * SAFE) / PW * 100, safeH = (PH - 2 * SAFE) / PH * 100;
+    const ROWS = 3, GUT = 1.6;                                 // % gutter between rows
+    const rowH = safeH / ROWS;
+
+    const place = (b, r) => {
       const a = ar[b.src];
-      const hmm = b.isCover ? PH : (a ? PW / a : 74);          // mm tall at full width
-      const h = Math.min(100, hmm / PH * 100);                  // % of page
-      if ((used + h > 100 && pages[pages.length - 1].frames.length) || b.isCover && pages[pages.length-1].frames.length) {
-        pages.push({ frames: [] }); used = 0;
-      }
-      pages[pages.length - 1].frames.push({
-        fid: b.fid, src: b.src, ar: a,
-        x: 0, y: +used.toFixed(2), w: 100, h: +h.toFixed(2),
-        prims: b.prims
-      });
-      used += h;
-      if (b.isCover) { pages.push({ frames: [] }); used = 0; }  // cover gets its own page
-    });
-    if (!pages[pages.length - 1].frames.length) pages.pop();
+      let h = rowH - GUT;                                       // height % of page
+      let w = a ? (h / 100 * PH * a) / PW * 100 : safeW;        // AR-preserved width (narration fills safe width)
+      if (w > safeW) { w = safeW; h = ((w / 100 * PW) / (a || 1)) / PH * 100; }  // width-limited → shorter
+      return {
+        fid: b.fid, src: b.src, ar: a, prims: b.prims,
+        x: +(50 - w / 2).toFixed(2),                            // centred horizontally
+        y: +(safeY + r * rowH + (rowH - h) / 2).toFixed(2),     // centred in its row
+        w: +w.toFixed(2), h: +h.toFixed(2)
+      };
+    };
+
+    const pages = [];
+    const cover = beats.find(b => b.isCover);
+    if (cover) pages.push({ frames: [{ fid: cover.fid, src: cover.src, ar: ar[cover.src], x: 0, y: 0, w: 100, h: 100, prims: cover.prims }] });
+    const body = beats.filter(b => !b.isCover);
+    for (let i = 0; i < body.length; i += ROWS) pages.push({ frames: body.slice(i, i + ROWS).map(place) });
 
     return {
       format: 'comic-starter/page-layout', version: 1, source: SOURCE,
