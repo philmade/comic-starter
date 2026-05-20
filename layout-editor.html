@@ -80,6 +80,11 @@
   .prim.bottom-left { bottom: 5%; left: 5%; } .prim.bottom-center { bottom: 5%; left: 50%; transform: translateX(-50%); } .prim.bottom-right { bottom: 5%; right: 5%; }
   .prim.middle-center { top: 50%; left: 50%; transform: translate(-50%,-50%); } .prim.below-frame { bottom: 4%; left: 5%; }
 
+  /* Chapter title page: centred, on the light sheet */
+  .chapter-title { position: absolute; inset: 12% 9%; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+  .chapter-title div { font-family: 'Bangers', cursive; color: #1a1a1a; letter-spacing: .02em; line-height: 1.05; font-size: 30px; }
+  .chapter-title div:first-child { font-family: 'Special Elite', monospace; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #8b7355; }
+
   .loading { color: #cdd6e8; text-align: center; padding: 80px; font-size: 14px; }
 
   @page { size: 163mm 246mm; margin: 0; }
@@ -149,54 +154,61 @@
     let auto = 0; const beats = [];
     Array.from(comic.children).forEach(child => {
       if ((child.getAttribute('style') || '').replace(/\s/g,'').includes('display:none')) return;
+      const isChapter = child.classList.contains('chapter-break') || child.getAttribute('data-layout') === 'chapter';
       const img = child.querySelector('img');
       const prims = Array.from(child.querySelectorAll(PRIM_SEL));
-      if (!img && prims.length === 0) return;
+      if (!isChapter && !img && prims.length === 0) return;        // skip spacers — but never a chapter title
       const src = img ? img.getAttribute('src') : null;
       const isCover = src && (/intro/i.test(src) || /\bcover\b/i.test(img.alt || ''));
+      const dl = child.getAttribute('data-layout');
+      const role = isChapter ? 'chapter' : (dl === 'page' || isCover) ? 'page' : 'panel';
       const fid = child.getAttribute('data-frame-id') || (isCover ? 'cover' : 'auto.' + String(auto++).padStart(2, '0'));
-      beats.push({
-        fid, src, isCover,
+      const beat = {
+        fid, src, isCover, role,
         prims: prims.map(p => ({ type: typeOf(p), pos: posOf(p), text: (p.textContent || '').replace(/\s+/g, ' ').trim() }))
-      });
+      };
+      if (isChapter) beat.lines = Array.from(child.children).map(c => (c.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      beats.push(beat);
     });
 
     // Real aspect ratios (parsed doc images aren't laid out, so preload them).
     const ar = await preloadAR([...new Set(beats.map(b => b.src).filter(Boolean))]);
 
-    // Auto-flow: cover gets its own full-bleed page; everything else flows
-    // 3 frames per page as rows in the TRIM area. Landscape images fill the full
-    // trim width (cover-crop) so they reach the guide edge by default; square/
-    // portrait images stay aspect-correct and centred (expanding those is a
-    // judgement call, left to the editor).
+    // Role-aware auto-flow:
+    //   panel   -> tiles 3-up in the trim area (landscape fills width; square/
+    //              portrait stay aspect-correct, centred)
+    //   page    -> owns its page (cover fills it; others fit aspect-correct, centred)
+    //   chapter -> its own title page AND a boundary: panels restart fresh after it
     const PW = 163, PH = 246, BLEED = 3;
     const trimX = BLEED / PW * 100, trimY = BLEED / PH * 100;
     const trimW = (PW - 2 * BLEED) / PW * 100, trimH = (PH - 2 * BLEED) / PH * 100;
-    const ROWS = 3, GUT = 1.4;                                  // % gutter between rows
+    const ROWS = 3, GUT = 1.4;
     const rowH = trimH / ROWS;
 
     const place = (b, r) => {
       const a = ar[b.src];
       let h = rowH - GUT, w, x;
-      if (a && a >= 1.2) {                                       // landscape → fill to the trim edge
-        w = trimW; x = trimX;
-      } else {                                                  // square / portrait / narration → aspect-correct, centred
-        w = a ? (h / 100 * PH * a) / PW * 100 : trimW;
-        if (w > trimW) { w = trimW; h = ((w / 100 * PW) / (a || 1)) / PH * 100; }
-        x = 50 - w / 2;
-      }
-      return {
-        fid: b.fid, src: b.src, ar: a, prims: b.prims,
-        x: +x.toFixed(2), y: +(trimY + r * rowH + (rowH - h) / 2).toFixed(2),
-        w: +w.toFixed(2), h: +h.toFixed(2)
-      };
+      if (a && a >= 1.2) { w = trimW; x = trimX; }                 // landscape → fill to the trim edge
+      else { w = a ? (h / 100 * PH * a) / PW * 100 : trimW; if (w > trimW) { w = trimW; h = ((w / 100 * PW) / (a || 1)) / PH * 100; } x = 50 - w / 2; }
+      return { fid: b.fid, src: b.src, ar: a, prims: b.prims, x: +x.toFixed(2), y: +(trimY + r * rowH + (rowH - h) / 2).toFixed(2), w: +w.toFixed(2), h: +h.toFixed(2) };
+    };
+    const pageFrame = (b) => {                                     // a page-role beat fills its own page
+      if (b.isCover) return { fid: b.fid, src: b.src, ar: ar[b.src], x: 0, y: 0, w: 100, h: 100, prims: b.prims };
+      const a = ar[b.src]; let w, h;
+      if (a) { h = trimH; w = (h / 100 * PH * a) / PW * 100; if (w > trimW) { w = trimW; h = ((w / 100 * PW) / a) / PH * 100; } }
+      else { w = trimW; h = trimH; }
+      return { fid: b.fid, src: b.src, ar: a, prims: b.prims, x: +(50 - w / 2).toFixed(2), y: +((100 - h) / 2).toFixed(2), w: +w.toFixed(2), h: +h.toFixed(2) };
     };
 
     const pages = [];
-    const cover = beats.find(b => b.isCover);
-    if (cover) pages.push({ frames: [{ fid: cover.fid, src: cover.src, ar: ar[cover.src], x: 0, y: 0, w: 100, h: 100, prims: cover.prims }] });
-    const body = beats.filter(b => !b.isCover);
-    for (let i = 0; i < body.length; i += ROWS) pages.push({ frames: body.slice(i, i + ROWS).map(place) });
+    let row = [];
+    const flush = () => { if (row.length) { pages.push({ frames: row.map((b, i) => place(b, i)) }); row = []; } };
+    beats.forEach(b => {
+      if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
+      else if (b.role === 'page') { flush(); pages.push({ frames: [pageFrame(b)] }); }
+      else { row.push(b); if (row.length === ROWS) flush(); }
+    });
+    flush();
 
     return {
       format: 'comic-starter/page-layout', version: 1, source: SOURCE,
@@ -240,6 +252,11 @@
       const pageEl = document.createElement('div');
       pageEl.className = 'page' + (i === current ? ' current' : '');
       pg.frames.forEach(f => pageEl.appendChild(makeFrame(f)));
+      if (pg.chapter) {
+        const ct = document.createElement('div'); ct.className = 'chapter-title';
+        pg.chapter.forEach(line => { const d = document.createElement('div'); d.textContent = line; ct.appendChild(d); });
+        pageEl.appendChild(ct);
+      }
       pageEl.appendChild(guides());
       stage.appendChild(pageEl);
     });
