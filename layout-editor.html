@@ -180,7 +180,7 @@
       // images like beatrize_intro.webp and promotes them to full pages.)
       const isCover = (/\bcover\b/i.test((img && img.alt) || '')) || child.getAttribute('data-frame-id') === 'cover';
       const dl = child.getAttribute('data-layout');
-      const role = isChapter ? 'chapter' : dl === 'card' ? 'card' : (dl === 'page' || isCover) ? 'page' : 'panel';
+      const role = isChapter ? 'chapter' : dl === 'cards' ? 'cards' : dl === 'card' ? 'card' : (dl === 'page' || isCover) ? 'page' : 'panel';
       const fid = child.getAttribute('data-frame-id') || (isCover ? 'cover' : 'auto.' + String(auto++).padStart(2, '0'));
       const beat = {
         fid, src, isCover, role,
@@ -188,6 +188,18 @@
       };
       if (isChapter) beat.lines = Array.from(child.children).map(c => (c.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
       if (role === 'card') beat.cols = +child.getAttribute('data-card-cols') || 2;
+      if (role === 'cards') {                                       // card-grid container: expand its child items into cards
+        beat.cols = +child.getAttribute('data-card-cols') || 2;
+        let container = child, best = 0;                            // the densest child container is the grid
+        child.querySelectorAll('*').forEach(el => { const n = [...el.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).length; if (n > best) { best = n; container = el; } });
+        beat.items = [...container.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).map(item => {
+          const im = item.querySelector('img');
+          const lines = Array.from(item.querySelectorAll('div,p,span,h1,h2,h3,h4'))
+            .filter(el => !el.querySelector('div,p,span,h1,h2,h3,h4,img') && (el.textContent || '').trim().length > 1)
+            .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
+          return { src: im ? im.getAttribute('src') : null, lines: lines.slice(0, 4) };
+        });
+      }
       if (role === 'page' && !isCover) {                            // page beats: capture on-page text (plain divs the prim selector misses)
         beat.pageText = Array.from(child.querySelectorAll('div, p, h1, h2, h3, blockquote'))
           .filter(el => !el.matches(PRIM_SEL) && !el.querySelector('div, p, h1, h2, h3, blockquote, img'))
@@ -233,7 +245,7 @@
     const cardFrame = (b, idx, cols, rows) => {
       const cellW = trimW / cols, cellH = trimH / rows, col = idx % cols, r = Math.floor(idx / cols);
       return {
-        fid: b.fid, src: b.src, ar: ar[b.src], prims: b.prims, card: true,
+        fid: b.fid, src: b.src, ar: ar[b.src], prims: b.prims, lines: b.lines, card: true,
         x: +(trimX + col * cellW + CARD_GUT / 2).toFixed(2),
         y: +(trimY + r * cellH + CARD_GUT / 2).toFixed(2),
         w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2)
@@ -258,6 +270,7 @@
       if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
       else if (b.role === 'page') { flush(); pages.push({ frames: b.src ? [pageFrame(b)] : [], pageText: b.pageText }); }
       else if (b.role === 'card') { flushPanels(); cardRun.push(b); }
+      else if (b.role === 'cards') { flushPanels(); (b.items || []).forEach(it => cardRun.push({ fid: b.fid, src: it.src, lines: it.lines, cols: b.cols })); }
       else if (ar[b.src] && ar[b.src] < 0.85) { flush(); pages.push({ frames: [pageFrame(b)] }); }  // portrait image → its own page
       else { flushCards(); row.push(b); if (row.length === ROWS) flushPanels(); }
     });
@@ -289,10 +302,16 @@
     el.className = 'frame' + (f.card ? ' card' : ''); el.dataset.id = f.fid;
     el.style.left = f.x + '%'; el.style.top = f.y + '%'; el.style.width = f.w + '%'; el.style.height = f.h + '%';
     if (f.src) { const img = document.createElement('img'); img.src = f.src; img.alt = ''; el.appendChild(img); }
-    f.prims.forEach(p => {
+    (f.prims || []).forEach(p => {
       const pr = document.createElement('div');
       pr.className = 'prim ' + p.type + ' ' + p.pos;
       pr.textContent = p.text;
+      el.appendChild(pr);
+    });
+    (f.lines || []).forEach((t, i) => {                            // text-only card items (cards container)
+      const pr = document.createElement('div');
+      pr.className = 'prim ' + (i === 0 ? 'label' : 'caption');
+      pr.textContent = t;
       el.appendChild(pr);
     });
     ['nw','ne','sw','se'].forEach(c => { const h = document.createElement('div'); h.className = 'handle ' + c; h.dataset.corner = c; el.appendChild(h); });
