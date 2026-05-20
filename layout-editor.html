@@ -159,7 +159,10 @@
       const prims = Array.from(child.querySelectorAll(PRIM_SEL));
       if (!isChapter && !img && prims.length === 0) return;        // skip spacers — but never a chapter title
       const src = img ? img.getAttribute('src') : null;
-      const isCover = src && (/intro/i.test(src) || /\bcover\b/i.test(img.alt || ''));
+      // Cover = the beat whose alt says "cover" or the frame explicitly id'd "cover".
+      // (Do NOT match "intro" in the filename — that wrongly grabs character intro
+      // images like beatrize_intro.webp and promotes them to full pages.)
+      const isCover = (/\bcover\b/i.test((img && img.alt) || '')) || child.getAttribute('data-frame-id') === 'cover';
       const dl = child.getAttribute('data-layout');
       const role = isChapter ? 'chapter' : (dl === 'page' || isCover) ? 'page' : 'panel';
       const fid = child.getAttribute('data-frame-id') || (isCover ? 'cover' : 'auto.' + String(auto++).padStart(2, '0'));
