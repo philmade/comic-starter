@@ -258,6 +258,7 @@
       if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
       else if (b.role === 'page') { flush(); pages.push({ frames: b.src ? [pageFrame(b)] : [], pageText: b.pageText }); }
       else if (b.role === 'card') { flushPanels(); cardRun.push(b); }
+      else if (ar[b.src] && ar[b.src] < 0.85) { flush(); pages.push({ frames: [pageFrame(b)] }); }  // portrait image → its own page
       else { flushCards(); row.push(b); if (row.length === ROWS) flushPanels(); }
     });
     flush();
