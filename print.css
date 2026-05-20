@@ -1,0 +1,144 @@
+/* comic-starter — print.css
+ *
+ * Activated by print.js on ?print=<format>. The engine clones each styled
+ * frame intact; the comic's own CSS still styles the clones, so the design
+ * (overlaid bubbles, positioned captions, mood, halftone/grain) is preserved.
+ * This file does the page-medium translation + the print "dressing": a warm
+ * matte-paper ground, photo mats on each panel, and a halftone overlay so the
+ * output reads as a printed 1950s newspaper, not a white-backed web dump.
+ *
+ * @page geometry is injected at runtime by print.js per format.
+ */
+
+/* ── Warm matte-paper ground (never white) ──────────────────────────────── */
+/* Hide everything in the body except our print doc — but NOT Paged.js's own
+   output container (.pagedjs_pages), which it injects as a direct body child.
+   Hiding that makes its page area display:none, so Paged.js's layout engine
+   reads a null offsetParent and crashes into a single blank page. */
+.print-active > body > *:not(.print-doc):not(.pagedjs_pages) { display: none !important; }
+.print-active, .print-active body {
+  background: #ece3cf;
+  margin: 0;
+  padding: 0;
+}
+.print-doc {
+  display: block;
+  background: #ece3cf;
+}
+
+/* ── Each cloned frame: keep its design, add a pasted-photo mat ──────────── */
+.print-doc .print-frame {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0 !important;        /* override 100vh splash sizing */
+  height: auto;
+  margin: 0 auto 9mm auto;
+  box-sizing: border-box;
+  position: relative;
+  /* Cream photo mat + warm keyline + warm-grey drop shadow = "pasted print".
+     Shadow is warm brown-grey (not pure black) so it doesn't muddy on
+     uncoated newsprint stock. */
+  border: 5mm solid #f6f0e0;
+  outline: 0.4mm solid #b3a585;
+  box-shadow: 0 1.5mm 3.5mm rgba(74, 58, 36, 0.28);
+  background: #f6f0e0;
+}
+/* Slight hand-pasted rotation, alternating, for the scrapbook feel. */
+.print-doc .print-frame:nth-of-type(odd)  { transform: rotate(-0.5deg); }
+.print-doc .print-frame:nth-of-type(even) { transform: rotate(0.45deg); }
+
+/* Fixed-aspect panels (absolute image + overlays) keep their crop. */
+.print-doc .print-fixed.panel-wide  { aspect-ratio: 16 / 9; overflow: hidden; }
+.print-doc .print-fixed.panel-strip { aspect-ratio: 21 / 9; overflow: hidden; }
+.print-doc .print-fixed.panel-half  { aspect-ratio: 4 / 3;  overflow: hidden; }
+.print-doc .print-fixed > img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  position: absolute;
+  top: 0; left: 0;
+}
+/* Natural-height image panels: let the image set the height. */
+.print-doc .print-natural { aspect-ratio: auto; overflow: visible; }
+.print-doc .print-natural > img {
+  position: static !important;
+  width: 100% !important;
+  height: auto !important;
+  display: block;
+}
+
+/* (Halftone dot overlay removed — too heavy, washed the art out.) */
+
+/* ── Cover / front matter ───────────────────────────────────────────────── */
+/* Full page-height dark plate with the whole portrait cover centred. */
+.print-doc .print-cover {
+  break-after: page;
+  /* height injected per-format by print.js (fills the page / bleeds on bleed formats) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transform: none !important;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: #0a0704;              /* cover art is dark; sit it on near-black */
+}
+.print-doc .print-cover > img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  position: static;
+}
+.print-doc .print-cover::after { display: none; }  /* no halftone on the cover */
+
+/* Chapter breaks: full page, centred — a 1950s title plate, not a floating strip. */
+.print-doc .chapter-break.print-frame {
+  break-before: page;
+  break-after: page;
+  min-height: 0;
+  border: 5mm solid #f6f0e0;
+}
+
+/* ── Text plates (narration-only frames) ────────────────────────────────── */
+/* The reviewer flagged these as the worst pages: grey boxes, double-rotated,
+   piled at the top. Treat them as proper editorial text blocks: cream ground,
+   no rotation, centred, capped measure, no halftone, no photo-mat. */
+/* Bold atomic-age narration: a dark night-sky field with a solid atomic-red
+   caption block, heavy keyline + hard comic drop-shadow, cream type — the EC-
+   Comics caption-box treatment, echoing the cover's palette. Not washed-out. */
+.print-doc .print-textplate {
+  transform: none !important;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: #0A0E17 !important;     /* night-sky field, beats mood classes */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 22mm 18mm;
+  min-height: 150mm;
+}
+.print-doc .print-textplate .caption,
+.print-doc .print-textplate .caption-typewriter,
+.print-doc .print-textplate .editable-caption {
+  position: static !important;
+  transform: none !important;
+  background: #C41E3A !important;     /* atomic red block */
+  color: #F8EFD8 !important;          /* cream type */
+  border: 1.2mm solid #0A0E17 !important;
+  box-shadow: 4mm 4mm 0 rgba(0,0,0,0.5) !important;  /* hard comic offset */
+  max-width: 60ch;
+  margin: 0 auto;
+  font-size: 15pt;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+  padding: 12mm 14mm;
+  border-radius: 0;
+}
