@@ -98,6 +98,12 @@
   .page-text .pt-body { font-family: 'Special Elite', monospace; font-size: 12px; line-height: 1.5; color: #1a1208; max-width: 94%; }
   .page-text.full { top: 8%; justify-content: center; }   /* text-only page: use the whole page */
 
+  /* Cards-container header / footer */
+  .cards-head { position: absolute; left: 8%; right: 8%; top: 3%; text-align: center; z-index: 12; }
+  .cards-head .ch-kicker { font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #8a6a3a; }
+  .cards-head .ch-sub { font-family: 'Special Elite', monospace; font-size: 9px; color: #2a2218; line-height: 1.4; margin-top: 3px; }
+  .cards-foot { position: absolute; left: 8%; right: 8%; bottom: 2.5%; text-align: center; font-family: 'Special Elite', monospace; font-size: 8px; color: #2a2218; z-index: 12; }
+
   .loading { color: #cdd6e8; text-align: center; padding: 80px; font-size: 14px; }
 
   @page { size: 163mm 246mm; margin: 0; }
@@ -199,6 +205,11 @@
             .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
           return { src: im ? im.getAttribute('src') : null, lines: lines.slice(0, 4) };
         });
+        const cl = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
+        const outside = Array.from(child.querySelectorAll('div,p,span,h1,h2,h3,h4'))
+          .filter(el => !container.contains(el) && el !== container && !el.querySelector('div,p,span,h1,h2,h3,h4,img') && cl(el).length > 1);
+        beat.header = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING).map(cl);
+        beat.footer = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).map(cl);
       }
       if (role === 'page' && !isCover) {                            // page beats: capture on-page text (plain divs the prim selector misses)
         beat.pageText = Array.from(child.querySelectorAll('div, p, h1, h2, h3, blockquote'))
@@ -251,6 +262,25 @@
         w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2)
       };
     };
+    // A cards-container beat -> its own page(s): optional header at top, the card
+    // grid in the middle, optional footer caption at the bottom.
+    const cardsBeatPages = (b) => {
+      const cols = b.cols || 2, perPage = cols * Math.max(1, Math.floor(6 / cols)), out = [];
+      for (let i = 0; i < b.items.length; i += perPage) {
+        const group = b.items.slice(i, i + perPage), rows = Math.ceil(group.length / cols);
+        const hasH = i === 0 && b.header && b.header.length, hasF = (i + perPage >= b.items.length) && b.footer && b.footer.length;
+        const top = trimY + (hasH ? 14 : 0), bottom = trimY + trimH - (hasF ? 9 : 0);
+        const cellW = trimW / cols, cellH = (bottom - top) / rows;
+        const frames = group.map((it, idx) => {
+          const c = idx % cols, r = Math.floor(idx / cols);
+          return { fid: b.fid, src: it.src, ar: ar[it.src], lines: it.lines, card: true,
+            x: +(trimX + c * cellW + CARD_GUT / 2).toFixed(2), y: +(top + r * cellH + CARD_GUT / 2).toFixed(2),
+            w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2) };
+        });
+        out.push({ frames, cardsHeader: hasH ? b.header : null, cardsFooter: hasF ? b.footer : null });
+      }
+      return out;
+    };
 
     const pages = [];
     let row = [], cardRun = [];
@@ -270,7 +300,7 @@
       if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
       else if (b.role === 'page') { flush(); pages.push({ frames: b.src ? [pageFrame(b)] : [], pageText: b.pageText }); }
       else if (b.role === 'card') { flushPanels(); cardRun.push(b); }
-      else if (b.role === 'cards') { flushPanels(); (b.items || []).forEach(it => cardRun.push({ fid: b.fid, src: it.src, lines: it.lines, cols: b.cols })); }
+      else if (b.role === 'cards') { flush(); cardsBeatPages(b).forEach(p => pages.push(p)); }
       else if (ar[b.src] && ar[b.src] < 0.85) { flush(); pages.push({ frames: [pageFrame(b)] }); }  // portrait image → its own page
       else { flushCards(); row.push(b); if (row.length === ROWS) flushPanels(); }
     });
@@ -334,6 +364,8 @@
         pg.pageText.forEach((t, i) => { const d = document.createElement('div'); d.className = i === 0 ? 'pt-head' : 'pt-body'; d.textContent = t; pt.appendChild(d); });
         pageEl.appendChild(pt);
       }
+      if (pg.cardsHeader) { const h = document.createElement('div'); h.className = 'cards-head'; pg.cardsHeader.forEach((t, i) => { const d = document.createElement('div'); d.className = i === 0 ? 'ch-kicker' : 'ch-sub'; d.textContent = t; h.appendChild(d); }); pageEl.appendChild(h); }
+      if (pg.cardsFooter) { const f = document.createElement('div'); f.className = 'cards-foot'; f.textContent = pg.cardsFooter.join('  '); pageEl.appendChild(f); }
       pageEl.appendChild(guides());
       stage.appendChild(pageEl);
     });
