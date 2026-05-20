@@ -160,11 +160,14 @@
     let auto = 0; const beats = [];
     Array.from(comic.children).forEach(child => {
       if ((child.getAttribute('style') || '').replace(/\s/g,'').includes('display:none')) return;
+      if (child.getAttribute('data-layout') === 'skip') return;    // web-only beats (asks/CTAs) excluded from print
       const isChapter = child.classList.contains('chapter-break') || child.getAttribute('data-layout') === 'chapter';
       const img = child.querySelector('img');
-      const prims = Array.from(child.querySelectorAll(PRIM_SEL));
+      // Top-level primitives only — a .speech/.thought bubble already contains its
+      // .speaker/.attribution; don't capture those nested prims again (double-import).
+      const prims = Array.from(child.querySelectorAll(PRIM_SEL)).filter(el => !el.parentElement.closest(PRIM_SEL));
       if (!isChapter && !img && prims.length === 0) return;        // skip spacers — but never a chapter title
-      const src = img ? img.getAttribute('src') : null;
+      const src = img ? img.getAttribute('src') : (child.getAttribute('data-print-img') || null);  // video/JS beats can declare a print still
       // Cover = the beat whose alt says "cover" or the frame explicitly id'd "cover".
       // (Do NOT match "intro" in the filename — that wrongly grabs character intro
       // images like beatrize_intro.webp and promotes them to full pages.)
