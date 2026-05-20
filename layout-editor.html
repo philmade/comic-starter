@@ -95,7 +95,11 @@
 
 <div class="toolbar">
   <span class="grp"><strong>comic-starter</strong> layout editor</span>
-  <span class="grp"><button id="prev">◀</button><span class="pageno" id="pageno">–</span><button id="next">▶</button></span>
+  <span class="grp">
+    <button id="prev">◀</button><span class="pageno" id="pageno">–</span><button id="next">▶</button>
+    <button id="addpage">+ Page</button><button id="delpage">⌫ empty</button>
+  </span>
+  <span class="grp">Selected frame → <button id="toprev">↤ prev page</button><button id="tonext">next page ↦</button></span>
   <span class="grp">
     <button id="reimport">Re-import from comic.html</button>
     <button id="guides">Guides</button>
@@ -264,6 +268,26 @@
 
   function goPage(i) { current = Math.max(0, Math.min(i, layout.pages.length - 1)); selected = null; render(); }
 
+  // Phase-1 broad strokes: move the selected frame to an adjacent page, and
+  // add/remove pages so you can re-pack frames across the comic.
+  function moveFrameToPage(delta) {
+    if (!selected) return;
+    const target = current + delta;
+    if (target < 0 || target >= layout.pages.length) return;
+    const src = layout.pages[current].frames, i = src.findIndex(f => f.fid === selected);
+    if (i < 0) return;
+    const [f] = src.splice(i, 1);
+    f.x = 0; f.y = 0;                       // land at the top of the target page, ready to place
+    layout.pages[target].frames.push(f);
+    current = target; save(); render();     // follow it; stays selected
+  }
+  function addPage() { layout.pages.splice(current + 1, 0, { id: 'p' + Date.now(), frames: [] }); current++; selected = null; save(); render(); }
+  function delPage() {
+    if (layout.pages.length <= 1) return;
+    if (layout.pages[current].frames.length) { alert('This page still has frames — move them off first.'); return; }
+    layout.pages.splice(current, 1); current = Math.max(0, current - 1); selected = null; save(); render();
+  }
+
   // ── Export / import the layout overlay ──────────────────────────────────────
   function exportJSON() {
     const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
@@ -281,6 +305,15 @@
   // ── Wiring ────────────────────────────────────────────────────────────────
   document.getElementById('prev').onclick = () => goPage(current - 1);
   document.getElementById('next').onclick = () => goPage(current + 1);
+  document.getElementById('addpage').onclick = addPage;
+  document.getElementById('delpage').onclick = delPage;
+  document.getElementById('toprev').onclick = () => moveFrameToPage(-1);
+  document.getElementById('tonext').onclick = () => moveFrameToPage(1);
+  window.addEventListener('keydown', e => {
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    if (e.key === '[') moveFrameToPage(-1);
+    else if (e.key === ']') moveFrameToPage(1);
+  });
   document.getElementById('guides').onclick = () => document.body.classList.toggle('no-guides');
   document.getElementById('export').onclick = exportJSON;
   document.getElementById('import').onclick = () => document.getElementById('import-file').click();
