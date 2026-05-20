@@ -62,6 +62,13 @@
   .frame.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
   .frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 
+  /* Card cell: image on top, text stacked below (no caption boxes) */
+  .frame.card { background: #f6f4ef; overflow: hidden; display: flex; flex-direction: column; }
+  .frame.card > img { position: static; inset: auto; width: 100%; height: auto; max-height: 56%; object-fit: cover; flex: 0 0 auto; }
+  .frame.card .prim { position: static !important; transform: none !important; max-width: none; margin: 2px 7px 0; padding: 0; background: transparent; border: none; box-shadow: none; border-radius: 0; }
+  .frame.card .prim.label { font-family: 'Bangers', cursive; color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
+  .frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
+
   .handle { display: none; position: absolute; width: 13px; height: 13px; background: #0a84ff; border: 2px solid #fff; border-radius: 50%; z-index: 30; }
   .frame.selected .handle { display: block; }
   .handle.nw { left: -7px;  top: -7px;    cursor: nwse-resize; }
@@ -173,13 +180,14 @@
       // images like beatrize_intro.webp and promotes them to full pages.)
       const isCover = (/\bcover\b/i.test((img && img.alt) || '')) || child.getAttribute('data-frame-id') === 'cover';
       const dl = child.getAttribute('data-layout');
-      const role = isChapter ? 'chapter' : (dl === 'page' || isCover) ? 'page' : 'panel';
+      const role = isChapter ? 'chapter' : dl === 'card' ? 'card' : (dl === 'page' || isCover) ? 'page' : 'panel';
       const fid = child.getAttribute('data-frame-id') || (isCover ? 'cover' : 'auto.' + String(auto++).padStart(2, '0'));
       const beat = {
         fid, src, isCover, role,
         prims: prims.map(p => ({ type: typeOf(p), pos: posOf(p), text: (p.textContent || '').replace(/\s+/g, ' ').trim() }))
       };
       if (isChapter) beat.lines = Array.from(child.children).map(c => (c.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      if (role === 'card') beat.cols = +child.getAttribute('data-card-cols') || 2;
       if (role === 'page' && !isCover) {                            // page beats: capture on-page text (plain divs the prim selector misses)
         beat.pageText = Array.from(child.querySelectorAll('div, p, h1, h2, h3, blockquote'))
           .filter(el => !el.matches(PRIM_SEL) && !el.querySelector('div, p, h1, h2, h3, blockquote, img'))
@@ -220,13 +228,37 @@
       return { fid: b.fid, src: b.src, ar: a, prims: b.prims, x: +(50 - w / 2).toFixed(2), y: +y.toFixed(2), w: +w.toFixed(2), h: +h.toFixed(2) };
     };
 
+    // CARD: a compact unit packed into a grid run (up to ~6/page; cols = variant).
+    const CARD_GUT = 2.4;
+    const cardFrame = (b, idx, cols, rows) => {
+      const cellW = trimW / cols, cellH = trimH / rows, col = idx % cols, r = Math.floor(idx / cols);
+      return {
+        fid: b.fid, src: b.src, ar: ar[b.src], prims: b.prims, card: true,
+        x: +(trimX + col * cellW + CARD_GUT / 2).toFixed(2),
+        y: +(trimY + r * cellH + CARD_GUT / 2).toFixed(2),
+        w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2)
+      };
+    };
+
     const pages = [];
-    let row = [];
-    const flush = () => { if (row.length) { pages.push({ frames: row.map((b, i) => place(b, i)) }); row = []; } };
+    let row = [], cardRun = [];
+    const flushPanels = () => { if (row.length) { pages.push({ frames: row.map((b, i) => place(b, i)) }); row = []; } };
+    const flushCards = () => {
+      if (!cardRun.length) return;
+      const cols = cardRun[0].cols || 2;
+      const perPage = cols * Math.max(1, Math.floor(6 / cols));     // ~6 cards/page cap
+      for (let i = 0; i < cardRun.length; i += perPage) {
+        const group = cardRun.slice(i, i + perPage), rows = Math.ceil(group.length / cols);
+        pages.push({ frames: group.map((b, idx) => cardFrame(b, idx, cols, rows)) });
+      }
+      cardRun = [];
+    };
+    const flush = () => { flushPanels(); flushCards(); };
     beats.forEach(b => {
       if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
       else if (b.role === 'page') { flush(); pages.push({ frames: b.src ? [pageFrame(b)] : [], pageText: b.pageText }); }
-      else { row.push(b); if (row.length === ROWS) flush(); }
+      else if (b.role === 'card') { flushPanels(); cardRun.push(b); }
+      else { flushCards(); row.push(b); if (row.length === ROWS) flushPanels(); }
     });
     flush();
 
@@ -253,7 +285,7 @@
   }
   function makeFrame(f) {
     const el = document.createElement('div');
-    el.className = 'frame'; el.dataset.id = f.fid;
+    el.className = 'frame' + (f.card ? ' card' : ''); el.dataset.id = f.fid;
     el.style.left = f.x + '%'; el.style.top = f.y + '%'; el.style.width = f.w + '%'; el.style.height = f.h + '%';
     if (f.src) { const img = document.createElement('img'); img.src = f.src; img.alt = ''; el.appendChild(img); }
     f.prims.forEach(p => {
