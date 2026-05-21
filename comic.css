@@ -46,7 +46,7 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
 
 /* VARIANT: polaroid — white mat, tilt (--rot), drop shadow. Reusable anywhere. */
-.frame.card.polaroid { background: #fff; padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
+.frame.card.polaroid { background: var(--mat, #fff); padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
 .frame.card.polaroid > img { max-height: 80%; }
 .frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
 .frame.card.polaroid .prim.label { font-family: 'Special Elite', monospace; font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
