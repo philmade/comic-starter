@@ -169,7 +169,10 @@
   }
   function setupMoveable() {
     if (mv) return;
-    mv = new Moveable(doc, { draggable: true, resizable: true, origin: false, snappable: false, keepRatio: false });
+    mv = new Moveable(doc, { draggable: true, resizable: true, origin: false, keepRatio: false,
+      snappable: true, snapThreshold: 5,
+      snapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true },
+      elementSnapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true } });
     const px = (el, p, v) => el.style[p] = v + 'px';
     mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
     mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
@@ -191,6 +194,8 @@
     }
     selected = el || null;
     mv.target = el || null;
+    const page = el && el.closest('.page');                    // snap to this page's guides + sibling frames
+    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-trim, .g-safe, .g-quiet'), ...[...page.querySelectorAll('.frame')].filter(f => f !== el)] : [];
     if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
     mv.updateRect();
     if (el) el.classList.add('selected');
@@ -267,13 +272,42 @@
   document.getElementById('print').onclick = () => window.print();
   document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
   document.querySelector('#palette [data-action="delete"]').onclick = deleteSelected;
+  // ── Zoom: Cmd/Ctrl + wheel (toolbar/palette stay fixed; pages scale + scroll). Cmd/Ctrl+0 resets. ──
+  let zoom = 1;
+  function setZoom(z) { zoom = Math.min(4, Math.max(0.3, z)); doc.style.zoom = zoom; toast(Math.round(zoom * 100) + '%'); if (mv) mv.updateRect(); }
+  window.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;                     // plain wheel still scrolls normally
+    e.preventDefault(); e.stopPropagation();                   // Cmd/Ctrl + wheel = zoom, never scroll
+    const old = zoom;
+    setZoom(zoom * (e.deltaY < 0 ? 1.12 : 0.893));
+    const r = zoom / old;                                      // keep the point under the cursor fixed (no jump)
+    window.scrollTo((window.scrollX + e.clientX) * r - e.clientX, (window.scrollY + e.clientY) * r - e.clientY);
+  }, { passive: false });
+
+  // ── Arrow-key nudge of the selection (1px; Shift = 10px). Uses layout px, so it's exact at any zoom. ──
+  function nudge(dx, dy) {
+    if (!selected) return;
+    const ref = selected.offsetParent; if (!ref) return;
+    selected.style.left = ((selected.offsetLeft + dx) / ref.clientWidth * 100).toFixed(2) + '%';
+    selected.style.top  = ((selected.offsetTop  + dy) / ref.clientHeight * 100).toFixed(2) + '%';
+    if (mv) mv.updateRect();
+    pushHistory();
+  }
+
   window.addEventListener('keydown', e => {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { e.preventDefault(); deleteSelected(); }
     else if (e.key === 'Escape') selectFrame(null);
+    else if (selected && e.key.indexOf('Arrow') === 0) {
+      e.preventDefault();
+      const s = e.shiftKey ? 10 : 1;
+      nudge(e.key === 'ArrowLeft' ? -s : e.key === 'ArrowRight' ? s : 0,
+            e.key === 'ArrowUp' ? -s : e.key === 'ArrowDown' ? s : 0);
+    }
   });
 
   // Flush a pending autosave on refresh/close so nothing in the debounce window is lost.
