@@ -145,6 +145,8 @@
 
 <div class="stage-wrap" id="stage"><div class="loading">Loading…</div></div>
 <input type="file" id="import-file" accept="application/json" hidden>
+<script src="vendor/moveable.min.js"></script>
+<script src="vendor/selecto.min.js"></script>
 
 <script>
   const STORE = 'comic-starter:layout:' + location.pathname;
@@ -152,7 +154,7 @@
   const PRIM_SEL = '.caption, .speech, .thought, .editable-caption, .editable-label';
   const POS = ['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right','middle-center','below-frame'];
 
-  let layout = null, current = 0, selected = null, drag = null;
+  let layout = null, current = 0, selected = null, drag = null, mv, selecto;
 
   // ── Import: master comic.html → frame-groups → auto-flowed pages ──────────
   function preloadAR(srcs) {
@@ -367,8 +369,7 @@
       pr.textContent = t;
       body.appendChild(pr);
     });
-    ['nw','ne','sw','se'].forEach(c => { const h = document.createElement('div'); h.className = 'handle ' + c; h.dataset.corner = c; el.appendChild(h); });
-    el.addEventListener('pointerdown', e => { const corner = e.target.dataset.corner; onDown(e, el, f, corner ? 'resize' : 'move', corner); });
+    el.__f = f;                                                    // frame ref for commit; Moveable + Selecto handle drag/resize/select
     return el;
   }
   function render() {
@@ -392,7 +393,7 @@
       pageEl.appendChild(guides());
       stage.appendChild(pageEl);
     });
-    if (selected) document.querySelectorAll('.frame').forEach(e => e.classList.toggle('selected', e.dataset.id === selected));
+    if (mv) { mv.target = []; selected = null; }                  // selection resets on re-render (targets are new elements)
     document.getElementById('pageno').textContent = (current + 1) + '/' + layout.pages.length;
     document.getElementById('prev').disabled = current === 0;
     document.getElementById('next').disabled = current === layout.pages.length - 1;
@@ -501,6 +502,40 @@
     r.readAsText(file);
   }
 
+  // ── Moveable (transform handles) + Selecto (marquee multi-select) ───────────
+  function commitFrame(el) {
+    const f = el.__f; if (!f) return;
+    const pr = el.closest('.page').getBoundingClientRect(), er = el.getBoundingClientRect();
+    f.x = +((er.left - pr.left) / pr.width * 100).toFixed(2);
+    f.y = +((er.top - pr.top) / pr.height * 100).toFixed(2);
+    f.w = +(er.width / pr.width * 100).toFixed(2);
+    f.h = +(er.height / pr.height * 100).toFixed(2);
+  }
+  function setupEditor() {
+    const stage = document.getElementById('stage');
+    mv = new Moveable(stage, { draggable: true, resizable: true, origin: false, snappable: true, snapThreshold: 6, keepRatio: false });
+    if (mv.selfElement && !mv.selfElement.parentElement) stage.appendChild(mv.selfElement);   // vanilla build doesn't auto-attach its control box
+    const px = (el, p, v) => el.style[p] = v + 'px';
+    mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
+    mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
+    mv.on('dragEnd', e => { if (e.isDrag) { commitFrame(e.target); save(); } });
+    mv.on('resizeEnd', e => { if (e.lastEvent) { commitFrame(e.target); save(); } });
+    mv.on('dragGroup', e => e.events.forEach(ev => { px(ev.target, 'left', ev.left); px(ev.target, 'top', ev.top); }));
+    mv.on('dragGroupEnd', e => { e.events.forEach(ev => commitFrame(ev.target)); save(); });
+    mv.on('resizeGroup', e => e.events.forEach(ev => { px(ev.target, 'width', ev.width); px(ev.target, 'height', ev.height); px(ev.target, 'left', ev.drag.left); px(ev.target, 'top', ev.drag.top); }));
+    mv.on('resizeGroupEnd', e => { e.events.forEach(ev => commitFrame(ev.target)); save(); });
+
+    // Click a frame to select it (Moveable shows the handles); click empty space to deselect.
+    stage.addEventListener('mousedown', e => {
+      if (mv.isMoveableElement(e.target)) return;                   // let Moveable handle its own control box
+      const fr = e.target.closest('.frame');
+      mv.target = fr || null;
+      if (mv.selfElement && !mv.selfElement.parentElement) stage.appendChild(mv.selfElement);  // selfElement is created lazily on first target
+      mv.updateRect();
+      selected = fr ? fr.__f.fid : null;
+    });
+  }
+
   // ── Wiring ────────────────────────────────────────────────────────────────
   document.getElementById('prev').onclick = () => goPage(current - 1);
   document.getElementById('next').onclick = () => goPage(current + 1);
@@ -534,7 +569,7 @@
   (async function boot() {
     try {
       layout = loadSaved() || await importFromMaster();
-      save(); render();
+      save(); render(); setupEditor();
     } catch (e) {
       document.getElementById('stage').innerHTML = '<div class="loading">Import failed: ' + e.message +
         '<br><br>Serve this from the comic folder so it can read ./comic.html and ./images.</div>';
