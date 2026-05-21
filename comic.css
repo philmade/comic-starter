@@ -31,7 +31,9 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet)); border: 1px dashed rgba(224,49,49,.50); }
 
 /* FRAME — an image + its primitives, positioned in % of the page. */
-.frame { position: absolute; z-index: 10; overflow: hidden; background: #20222b; }
+/* overflow:visible so a caption can sit below/over the frame edge; the image is
+   still clipped by object-fit. No z-index, so prims (z:12) float above neighbours. */
+.frame { position: absolute; overflow: visible; background: #20222b; }
 .frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
 /* Card — image on top, text stacked below. */
