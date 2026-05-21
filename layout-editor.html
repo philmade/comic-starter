@@ -127,6 +127,7 @@
     <button id="addpage">+ Page</button><button id="delpage">⌫ empty</button>
   </span>
   <span class="grp">Selected frame → <button id="toprev">↤ prev page</button><button id="tonext">next page ↦</button></span>
+  <span class="grp">Cards: <button data-cols="1">1-col</button><button data-cols="2">2-col</button><button data-cols="3">3-col</button></span>
   <span class="grp">
     <button id="reimport">Re-import from comic.html</button>
     <button id="guides">Guides</button>
@@ -420,6 +421,22 @@
 
   function goPage(i) { current = Math.max(0, Math.min(i, layout.pages.length - 1)); selected = null; render(); }
 
+  // Re-grid the current page's cards into N columns (vertical/horizontal restack).
+  function reflowCols(cols) {
+    const pg = layout.pages[current], cards = pg.frames.filter(f => f.card);
+    if (!cards.length) return;
+    const PW = 163, PH = 246, BLEED = 3, GUT = 2.4;
+    const trimX = BLEED / PW * 100, trimY = BLEED / PH * 100, trimW = (PW - 2 * BLEED) / PW * 100, trimH = (PH - 2 * BLEED) / PH * 100;
+    const top = trimY + (pg.cardsHeader ? 14 : 0), bottom = trimY + trimH - (pg.cardsFooter ? 9 : 0);
+    const rows = Math.ceil(cards.length / cols), cellW = trimW / cols, cellH = (bottom - top) / rows;
+    cards.forEach((f, idx) => {
+      const c = idx % cols, r = Math.floor(idx / cols);
+      f.x = +(trimX + c * cellW + GUT / 2).toFixed(2); f.y = +(top + r * cellH + GUT / 2).toFixed(2);
+      f.w = +(cellW - GUT).toFixed(2); f.h = +(cellH - GUT).toFixed(2);
+    });
+    save(); render();
+  }
+
   // Phase-1 broad strokes: move the selected frame to an adjacent page, and
   // add/remove pages so you can re-pack frames across the comic.
   function moveFrameToPage(delta) {
@@ -461,6 +478,7 @@
   document.getElementById('delpage').onclick = delPage;
   document.getElementById('toprev').onclick = () => moveFrameToPage(-1);
   document.getElementById('tonext').onclick = () => moveFrameToPage(1);
+  document.querySelectorAll('.toolbar [data-cols]').forEach(b => b.onclick = () => reflowCols(+b.dataset.cols));
   window.addEventListener('keydown', e => {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === '[') moveFrameToPage(-1);
