@@ -91,6 +91,12 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 /* A big closing / reveal line (Bangers). */
 .page-text .pt-punch { font-family: 'Bangers', cursive; font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #f4efe4; margin-top: 10px; }
 
+/* Display prims — big text that is still an editable + movable primitive. */
+.prim.title { font-family: 'Bangers', cursive; font-size: 40px; letter-spacing: .04em; line-height: 1; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
+.prim.punch { font-family: 'Bangers', cursive; font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
+.page.dark .prim.title { color: #e3a73c; }
+.page.dark .prim.punch { color: #f4efe4; }
+
 /* PRINT — exact page, no chrome, one page per sheet. */
 @page { size: 163mm 246mm; margin: 0; }
 @media print {

@@ -240,9 +240,11 @@
   }
 
   // ── Inline text editing (double-click) ──────────────────────────────────────
-  const EDITABLE = '.prim, .pt-head, .pt-body, .ch-kicker, .ch-sub, .cards-foot, .chapter-title div';
+  // Any text LEAF inside a page is editable — no allow-list, so nothing on a
+  // page can be un-editable. (Containers with child elements are skipped.)
   doc.addEventListener('dblclick', e => {
-    const t = e.target.closest(EDITABLE); if (!t) return;
+    const t = e.target;
+    if (!t.closest('.page') || t.querySelector('*') || !t.textContent.trim()) return;
     t.contentEditable = 'true'; t.focus();
     t.addEventListener('blur', () => { t.removeAttribute('contenteditable'); pushHistory(); }, { once: true });
   });
