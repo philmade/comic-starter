@@ -69,6 +69,7 @@
   <div class="hint">Click a frame or caption to select. A chip recasts it (a frame gains a new one); Delete / ⌫ removes it. Yellow dashed = its parent frame.</div>
 </div>
 
+<div id="status"></div>
 <div id="doc"><div style="color:#cdd6e8; padding:80px">Loading working.html…</div></div>
 
 <script>
@@ -81,7 +82,7 @@
   let history = [], hIdx = -1;
   let saveTimer = null, ready = false;   // autosave debounce + load guard
 
-  const toast = m => { const s = document.getElementById('status'); s.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => s.textContent = '', 1600); };
+  const toast = m => { const s = document.getElementById('status'); if (!s) return; s.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => s.textContent = '', 1600); };
 
   // ── Load / reload ──────────────────────────────────────────────────────────
   async function load() {
