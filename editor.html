@@ -38,6 +38,7 @@
   .frame, .prim { cursor: move; }
   .frame:hover, .prim:hover { outline: 1px dashed rgba(10,132,255,.55); outline-offset: -1px; }
   .frame.selected, .prim.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  .frame.is-parent { outline: 2px dashed #ffd24a; outline-offset: 2px; }   /* parent frame of the selected prim */
   .frame.card .prim { cursor: default; }   /* card text isn't free-positioned */
   [contenteditable="true"] { outline: 2px solid #ffd24a !important; cursor: text; }
 
@@ -63,7 +64,9 @@
   <button data-cast="label">▮ Label</button>
   <button data-cast="speech">❝ Speech</button>
   <button data-cast="thought">❛ Thought</button>
-  <div class="hint">Select a frame, then cast. Looks come from comic.css.</div>
+  <div class="sep"></div>
+  <button data-action="delete" style="border-color:#6b2b2b; color:#ffb4b4;">⌫ Delete selected</button>
+  <div class="hint">Click a frame or caption to select. A chip recasts it (a frame gains a new one); Delete / ⌫ removes it. Yellow dashed = its parent frame.</div>
 </div>
 
 <div id="doc"><div style="color:#cdd6e8; padding:80px">Loading working.html…</div></div>
@@ -127,8 +130,8 @@
   function cleanClone(node) {
     const c = node.cloneNode(true);
     c.querySelectorAll('.page-badge, .moveable-control-box, .moveable-area, .moveable-line, .moveable-control').forEach(n => n.remove());
-    c.classList && c.classList.remove('selected');
-    c.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
+    c.classList && c.classList.remove('selected', 'is-parent');
+    c.querySelectorAll('.selected, .is-parent').forEach(n => n.classList.remove('selected', 'is-parent'));
     c.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     return c;
   }
@@ -171,8 +174,12 @@
     });
   }
   function selectFrame(el) {                                  // el = a frame OR a prim
-    [...doc.querySelectorAll('.selected')].forEach(n => n.classList.remove('selected'));
-    if (el && el.classList.contains('prim')) normalizePrim(el);
+    [...doc.querySelectorAll('.selected, .is-parent')].forEach(n => n.classList.remove('selected', 'is-parent'));
+    if (el && el.classList.contains('prim')) {
+      normalizePrim(el);
+      const frame = el.closest('.frame');
+      if (frame) frame.classList.add('is-parent');           // colour-code: show which frame it belongs to
+    }
     selected = el || null;
     mv.target = el || null;
     if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
@@ -203,25 +210,33 @@
     [...body.children].forEach(c => el.appendChild(c)); body.remove();
   }
   function setPrimType(p, type) {
-    const pos = [...p.classList].find(c => POS.includes(c));
-    p.className = 'prim ' + type + (pos ? ' ' + pos : '');
+    const keep = [...p.classList].filter(c => POS.includes(c) || c === 'selected');   // keep position + selection
+    p.className = ['prim', type, ...keep].join(' ');
   }
   function castSelected(type) {
-    if (!selected) { toast('select a frame first'); return; }
+    if (!selected) { toast('select something first'); return; }
     const el = selected;
-    if (type === 'panel') { el.classList.remove('card', 'horizontal', 'polaroid'); unwrapCardBody(el); }
+    if (el.classList.contains('prim')) {                       // a prim is selected -> RECAST it in place
+      if (!TEXT.includes(type)) { toast('pick caption / label / speech / thought'); return; }
+      setPrimType(el, type);
+    } else if (type === 'panel') { el.classList.remove('card', 'horizontal', 'polaroid'); unwrapCardBody(el); }
     else if (type === 'card') { el.classList.add('card'); wrapCardBody(el); }
-    else if (TEXT.includes(type)) {
-      const prims = el.querySelectorAll('.prim');
-      if (prims.length) prims.forEach(p => setPrimType(p, type));
-      else {
-        const host = el.querySelector(':scope > .card-body') || el;
-        const d = document.createElement('div');
-        d.className = 'prim ' + type + (el.classList.contains('card') ? '' : ' top-left');
-        d.textContent = 'New ' + type; host.appendChild(d);
-      }
+    else if (TEXT.includes(type)) {                            // a frame is selected -> ADD a new prim, then select it
+      const host = el.querySelector(':scope > .card-body') || el;
+      const d = document.createElement('div');
+      d.className = 'prim ' + type + (el.classList.contains('card') ? '' : ' top-left');
+      d.textContent = 'New ' + type;
+      host.appendChild(d);
+      pushHistory(); selectFrame(d); toast('added ' + type); return;
     }
     pushHistory(); toast('cast → ' + type);
+  }
+  function deleteSelected() {
+    if (!selected) { toast('nothing selected'); return; }
+    const el = selected;
+    selectFrame(null);                                         // clear selection + parent highlight + Moveable
+    el.remove();
+    pushHistory(); toast('deleted');
   }
 
   // ── Inline text editing (double-click) ──────────────────────────────────────
@@ -240,11 +255,13 @@
   document.getElementById('guides').onclick = () => document.querySelectorAll('.guides').forEach(g => g.style.display = g.style.display === 'none' ? '' : 'none');
   document.getElementById('print').onclick = () => window.print();
   document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
+  document.querySelector('#palette [data-action="delete"]').onclick = deleteSelected;
   window.addEventListener('keydown', e => {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { e.preventDefault(); deleteSelected(); }
     else if (e.key === 'Escape') selectFrame(null);
   });
 
