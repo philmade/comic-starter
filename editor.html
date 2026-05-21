@@ -35,9 +35,10 @@
 
   /* Editor-only metadata over each page. */
   .page-badge { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .12em; color: #8a8f99; user-select: none; }
-  .frame { cursor: move; }
-  .frame:hover { outline: 1px dashed rgba(10,132,255,.55); outline-offset: -1px; }
-  .frame.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  .frame, .prim { cursor: move; }
+  .frame:hover, .prim:hover { outline: 1px dashed rgba(10,132,255,.55); outline-offset: -1px; }
+  .frame.selected, .prim.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  .frame.card .prim { cursor: default; }   /* card text isn't free-positioned */
   [contenteditable="true"] { outline: 2px solid #ffd24a !important; cursor: text; }
 
   @media print { .toolbar, .palette, #status, .page-badge { display: none !important; } #doc { padding: 0; gap: 0; display: block; } }
@@ -144,14 +145,15 @@
 
   // ── Moveable: drag / resize, committed to inline % ──────────────────────────
   function commitToPercent(el) {
-    const page = el.closest('.page'); if (!page) return;
-    const pw = page.clientWidth, ph = page.clientHeight;
+    const ref = el.offsetParent; if (!ref) return;     // frame -> its .page ; prim -> its .frame
+    const rw = ref.clientWidth, rh = ref.clientHeight;
     // Read LAYOUT geometry (px, independent of CSS units and of transform/rotate).
     // A move leaves width/height in %, so never parse the inline string as px.
-    el.style.left   = (el.offsetLeft   / pw * 100).toFixed(2) + '%';
-    el.style.top    = (el.offsetTop    / ph * 100).toFixed(2) + '%';
-    el.style.width  = (el.offsetWidth  / pw * 100).toFixed(2) + '%';
-    el.style.height = (el.offsetHeight / ph * 100).toFixed(2) + '%';
+    el.style.left   = (el.offsetLeft   / rw * 100).toFixed(2) + '%';
+    el.style.top    = (el.offsetTop    / rh * 100).toFixed(2) + '%';
+    el.style.width  = (el.offsetWidth  / rw * 100).toFixed(2) + '%';
+    el.style.height = (el.offsetHeight / rh * 100).toFixed(2) + '%';
+    if (el.classList.contains('prim')) el.style.maxWidth = 'none';   // let the dragged width take effect
   }
   function setupMoveable() {
     if (mv) return;
@@ -164,16 +166,29 @@
     doc.addEventListener('mousedown', e => {
       if (mv.isMoveableElement(e.target)) return;
       if (e.target.isContentEditable) return;
-      selectFrame(e.target.closest('.frame'));
+      const prim = e.target.closest('.prim');                 // a caption/speech/label/thought
+      selectFrame(prim && !prim.closest('.frame.card') ? prim : e.target.closest('.frame'));
     });
   }
-  function selectFrame(fr) {
-    [...doc.querySelectorAll('.frame.selected')].forEach(f => f.classList.remove('selected'));
-    selected = fr || null;
-    mv.target = fr || null;
+  function selectFrame(el) {                                  // el = a frame OR a prim
+    [...doc.querySelectorAll('.selected')].forEach(n => n.classList.remove('selected'));
+    if (el && el.classList.contains('prim')) normalizePrim(el);
+    selected = el || null;
+    mv.target = el || null;
     if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
     mv.updateRect();
-    if (fr) fr.classList.add('selected');
+    if (el) el.classList.add('selected');
+  }
+  // A prim positioned by class (.top-left…) -> explicit inline % at its current spot,
+  // so Moveable can move/resize it cleanly (class transforms removed).
+  function normalizePrim(prim) {
+    const frame = prim.offsetParent; if (!frame) return;
+    if (prim.style.left && !POS.some(c => prim.classList.contains(c))) return;   // already inline
+    const fr = frame.getBoundingClientRect(), pr = prim.getBoundingClientRect();
+    prim.style.left = ((pr.left - fr.left) / fr.width * 100).toFixed(2) + '%';
+    prim.style.top  = ((pr.top - fr.top) / fr.height * 100).toFixed(2) + '%';
+    prim.style.maxWidth = 'none';
+    POS.forEach(c => prim.classList.remove(c));
   }
 
   // ── Cast (the palette) — change a frame's primitive in place ────────────────
