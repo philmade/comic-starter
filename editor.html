@@ -40,6 +40,10 @@
   .frame.selected, .prim.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
   .frame.is-parent { outline: 2px dashed #ffd24a; outline-offset: 2px; }   /* parent frame of the selected prim */
   .frame.card .prim { cursor: default; }   /* card text isn't free-positioned */
+  /* While dragging/resizing: hide handles + bounding box (keep snap guidelines) so the element's own edge is clear. */
+  body.dragging .moveable-control,
+  body.dragging .moveable-line.moveable-direction { opacity: 0 !important; }
+  body.dragging .frame.selected, body.dragging .prim.selected, body.dragging .frame.is-parent { outline: none !important; }
   [contenteditable="true"] { outline: 2px solid #ffd24a !important; cursor: text; }
 
   @media print { .toolbar, .palette, #status, .page-badge { display: none !important; } #doc { padding: 0; gap: 0; display: block; } }
@@ -174,10 +178,12 @@
       snapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true },
       elementSnapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true } });
     const px = (el, p, v) => el.style[p] = v + 'px';
+    mv.on('dragStart', () => document.body.classList.add('dragging'));
     mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
+    mv.on('resizeStart', () => document.body.classList.add('dragging'));
     mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
-    mv.on('dragEnd', e => { if (e.isDrag) { commitToPercent(e.target); pushHistory(); } });
-    mv.on('resizeEnd', e => { if (e.lastEvent) { commitToPercent(e.target); pushHistory(); } });
+    mv.on('dragEnd', e => { document.body.classList.remove('dragging'); if (e.isDrag) { commitToPercent(e.target); pushHistory(); } });
+    mv.on('resizeEnd', e => { document.body.classList.remove('dragging'); if (e.lastEvent) { commitToPercent(e.target); pushHistory(); } });
     doc.addEventListener('mousedown', e => {
       if (mv.isMoveableElement(e.target)) return;
       if (e.target.isContentEditable) return;
@@ -291,6 +297,8 @@
     selected.style.left = ((selected.offsetLeft + dx) / ref.clientWidth * 100).toFixed(2) + '%';
     selected.style.top  = ((selected.offsetTop  + dy) / ref.clientHeight * 100).toFixed(2) + '%';
     if (mv) mv.updateRect();
+    document.body.classList.add('dragging');                 // hide handles while nudging; restore ~0.45s after the last keypress
+    clearTimeout(nudge._t); nudge._t = setTimeout(() => { document.body.classList.remove('dragging'); if (mv) mv.updateRect(); }, 450);
     pushHistory();
   }
 
