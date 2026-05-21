@@ -44,7 +44,25 @@
   button:hover { background: #32323a; }
   button:disabled { opacity: .4; cursor: default; }
   .pageno { min-width: 70px; text-align: center; }
-  #status { border: none; color: #7ed957; min-width: 90px; }
+  /* Out of toolbar flow: a fading toast bottom-right, never shifts layout */
+  #status {
+    position: fixed; bottom: 16px; right: 18px; z-index: 200;
+    color: #7ed957; background: rgba(23,23,27,.92); border: 1px solid #2d4a2d;
+    padding: 6px 12px; border-radius: 6px; pointer-events: none;
+    opacity: 0; transition: opacity .25s ease;
+  }
+  #status:not(:empty) { opacity: 1; }
+
+  /* Left primitive palette — select a frame, click a chip to cast it. */
+  .palette {
+    position: fixed; left: 12px; top: 92px; z-index: 150;
+    display: flex; flex-direction: column; gap: 5px;
+    padding: 8px; width: 120px; font-size: 11px;
+    background: #17171b; border: 1px solid #000; border-radius: 8px;
+  }
+  .palette .ph { color: #ffd24a; font-weight: 700; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin: 2px 2px 3px; }
+  .palette button { width: 100%; text-align: left; padding: 6px 8px; }
+  .palette .sep { height: 1px; background: #333; margin: 3px 0; }
 
   .stage-wrap { padding: 24px; display: flex; justify-content: center; }
   .page { position: relative; width: var(--page-w); height: var(--page-h); background: #f6f4ef; box-shadow: 0 6px 30px rgba(0,0,0,.45); overflow: hidden; }
@@ -143,6 +161,17 @@
   <span id="status"></span>
 </div>
 
+<div class="palette" id="palette">
+  <div class="ph">Cast to</div>
+  <button data-cast="page">◳ Page</button>
+  <button data-cast="panel">▭ Panel</button>
+  <button data-cast="card">▢ Card</button>
+  <div class="sep"></div>
+  <button data-cast="caption">¶ Caption</button>
+  <button data-cast="label">▮ Label</button>
+  <button data-cast="speech">❝ Speech</button>
+  <button data-cast="thought">❛ Thought</button>
+</div>
 <div class="stage-wrap" id="stage"><div class="loading">Loading…</div></div>
 <input type="file" id="import-file" accept="application/json" hidden>
 <script src="vendor/moveable.min.js"></script>
@@ -488,6 +517,53 @@
     layout.pages.splice(current, 1); current = Math.max(0, current - 1); selected = null; save(); render();
   }
 
+  // ── Cast: re-type the selected frame into another primitive, then re-render ──
+  // The one operation behind the palette: select a frame, pick a primitive, the
+  // frame adopts it. All casts here are field flips render() already honours
+  // (card/dir, prim.type) plus the structural page-cast — no new render code.
+  const TEXT_TYPES = ['speech', 'thought', 'caption', 'label'];
+  function selectedFrameEl() {
+    const t = mv && mv.target, el = Array.isArray(t) ? t[0] : t;
+    return (el && el.classList && el.classList.contains('frame')) ? el : null;
+  }
+  function applyCast(f, type) {
+    if (type === 'panel') { f.card = false; delete f.dir; return true; }       // plain full-width image frame
+    if (type === 'card')  { f.card = true; return true; }                      // compact card (image over text)
+    if (type === 'page') {                                                     // pull onto its own new page, full-bleed splash
+      const pg = layout.pages[current], i = pg.frames.indexOf(f);
+      if (i < 0) return false;
+      pg.frames.splice(i, 1);
+      f.card = false; delete f.dir; f.x = 0; f.y = 0; f.w = 100; f.h = 100;
+      layout.pages.splice(current + 1, 0, { frames: [f] }); current += 1;
+      return true;
+    }
+    if (TEXT_TYPES.includes(type)) {                                           // recast (or add) the frame's text primitive
+      if (f.prims && f.prims.length) f.prims.forEach(p => p.type = type);
+      else if (f.lines && f.lines.length) return 'lines';                      // list-text card — recast not handled yet
+      else f.prims = [{ type, pos: 'top-left', text: 'New ' + type }];
+      return true;
+    }
+    return false;
+  }
+  function castSelected(type) {
+    const el = selectedFrameEl();
+    if (!el) { toast('select a frame first'); return; }
+    const f = el.__f;
+    const r = applyCast(f, type);
+    if (r === 'lines') { toast('that card uses list text — recast n/a yet'); return; }
+    if (!r) { toast('can’t cast that'); return; }
+    save(); render(); reselectFrame(f);
+  }
+  function reselectFrame(f) {                                                  // re-target Moveable to the same frame's new element
+    if (!mv) return;
+    const el = [...document.querySelectorAll('.frame')].find(e => e.__f === f);
+    if (!el) return;
+    mv.target = el;
+    if (mv.selfElement && !mv.selfElement.parentElement) document.getElementById('stage').appendChild(mv.selfElement);
+    mv.updateRect(); selected = f.fid;
+  }
+  function toast(m) { const st = document.getElementById('status'); st.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => st.textContent = '', 1500); }
+
   // ── Export / import the layout overlay ──────────────────────────────────────
   function exportJSON() {
     const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
@@ -545,6 +621,7 @@
   document.getElementById('tonext').onclick = () => moveFrameToPage(1);
   document.querySelectorAll('.toolbar [data-cols]').forEach(b => b.onclick = () => reflowCols(+b.dataset.cols));
   document.querySelectorAll('.toolbar [data-dir]').forEach(b => b.onclick = () => setCardDir(b.dataset.dir));
+  document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
   window.addEventListener('keydown', e => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
