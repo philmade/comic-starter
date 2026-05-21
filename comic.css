@@ -98,7 +98,7 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .page.dark { background: #0a0b0e; }
 .page.dark .cards-head .ch-kicker, .page.dark .page-text .pt-head { color: #e3a73c; }
 .page.dark .cards-head .ch-sub, .page.dark .page-text .pt-body { color: #d7d2c6; }
-.page.dark .prim.caption, .page.dark .prim.label { background: transparent; border: none; color: #ece7db; }
+/* On dark pages, captions/labels KEEP their cream box (dark ink on light) — print-safe; no white-text knockout on cheap stock. */
 /* A big closing / reveal line (Bangers). */
 .page-text .pt-punch { font-family: 'Bangers', cursive; font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #f4efe4; margin-top: 10px; }
 
@@ -106,7 +106,7 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .prim.title { font-family: 'Bangers', cursive; font-size: 40px; letter-spacing: .04em; line-height: 1; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
 .prim.punch { font-family: 'Bangers', cursive; font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
 .page.dark .prim.title { color: #e3a73c; }
-.page.dark .prim.punch { color: #f4efe4; }
+.page.dark .prim.punch { background: rgba(245,230,200,.96); border: 2px solid #8b7355; color: #1a1208; padding: 4px 16px; }
 
 /* PRINT — exact page, no chrome, one page per sheet. */
 @page { size: 163mm 246mm; margin: 0; }
