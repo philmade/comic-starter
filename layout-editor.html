@@ -201,16 +201,17 @@
         child.querySelectorAll('*').forEach(el => { const n = [...el.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).length; if (n > best) { best = n; container = el; } });
         beat.items = [...container.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).map(item => {
           const im = item.querySelector('img');
-          const lines = Array.from(item.querySelectorAll('div,p,span,h1,h2,h3,h4'))
-            .filter(el => !el.querySelector('div,p,span,h1,h2,h3,h4,img') && (el.textContent || '').trim().length > 1)
+          const lines = Array.from(item.querySelectorAll('div,p,h1,h2,h3,h4,blockquote'))
+            .filter(el => !el.querySelector('div,p,h1,h2,h3,h4,blockquote,img') && (el.textContent || '').trim().length > 1)
             .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
           return { src: im ? im.getAttribute('src') : null, lines: lines.slice(0, 4) };
         });
         const cl = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
-        const outside = Array.from(child.querySelectorAll('div,p,span,h1,h2,h3,h4'))
-          .filter(el => !container.contains(el) && el !== container && !el.querySelector('div,p,span,h1,h2,h3,h4,img') && cl(el).length > 1);
+        const outside = Array.from(child.querySelectorAll('div,p,h1,h2,h3,h4,blockquote'))
+          .filter(el => !container.contains(el) && el !== container && !el.querySelector('div,p,h1,h2,h3,h4,blockquote,img') && cl(el).length > 1);
         beat.header = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING).map(cl);
         beat.footer = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).map(cl);
+        while (beat.items.length > 1 && !beat.items[0].src && beat.items.some(it => it.src)) beat.header = (beat.header || []).concat(beat.items.shift().lines);  // leading text intro -> header
       }
       if (role === 'page' && !isCover) {                            // page beats: capture on-page text (plain divs the prim selector misses)
         beat.pageText = Array.from(child.querySelectorAll('div, p, h1, h2, h3, blockquote'))
