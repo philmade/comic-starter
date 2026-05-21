@@ -146,13 +146,16 @@
   function commitToPercent(el) {
     const page = el.closest('.page'); if (!page) return;
     const pw = page.clientWidth, ph = page.clientHeight;
-    const pct = (v, d) => (parseFloat(v) / d * 100).toFixed(2) + '%';
-    el.style.left = pct(el.style.left, pw); el.style.top = pct(el.style.top, ph);
-    el.style.width = pct(el.style.width, pw); el.style.height = pct(el.style.height, ph);
+    // Read LAYOUT geometry (px, independent of CSS units and of transform/rotate).
+    // A move leaves width/height in %, so never parse the inline string as px.
+    el.style.left   = (el.offsetLeft   / pw * 100).toFixed(2) + '%';
+    el.style.top    = (el.offsetTop    / ph * 100).toFixed(2) + '%';
+    el.style.width  = (el.offsetWidth  / pw * 100).toFixed(2) + '%';
+    el.style.height = (el.offsetHeight / ph * 100).toFixed(2) + '%';
   }
   function setupMoveable() {
     if (mv) return;
-    mv = new Moveable(doc, { draggable: true, resizable: true, origin: false, snappable: true, snapThreshold: 6, keepRatio: false });
+    mv = new Moveable(doc, { draggable: true, resizable: true, origin: false, snappable: false, keepRatio: false });
     const px = (el, p, v) => el.style[p] = v + 'px';
     mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
     mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
