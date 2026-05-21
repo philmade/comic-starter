@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Comic editor</title>
+<!-- The design system: pages render here EXACTLY as they do in working.html / print. -->
+<link rel="stylesheet" href="comic.css">
+<style>
+  /* ===== EDITOR CHROME ONLY — a thin metadata layer over the working doc.
+     None of this is ever written back to working.html (stripped on save). ===== */
+  body { margin: 0; padding: 0; display: block; background: #2b2b30; color: #e8e8ea; font-family: 'Inter', sans-serif; }
+
+  .toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center; padding: 8px 14px; background: #17171b; border-bottom: 1px solid #000; font-size: 12px; }
+  .toolbar strong { color: #ffd24a; }
+  .toolbar .grp { display: flex; gap: 6px; align-items: center; padding-right: 8px; border-right: 1px solid #333; }
+  .toolbar button { font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 5px; border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer; }
+  .toolbar button:hover { background: #32323a; }
+  .toolbar button:disabled { opacity: .4; cursor: default; }
+
+  .palette { position: fixed; left: 12px; top: 92px; z-index: 900; display: flex; flex-direction: column; gap: 5px;
+    padding: 8px; width: 124px; font-size: 11px; background: #17171b; border: 1px solid #000; border-radius: 8px; }
+  .palette .ph { color: #ffd24a; font-weight: 700; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin: 2px 2px 3px; }
+  .palette button { width: 100%; text-align: left; padding: 6px 8px; font: inherit; font-size: 11px; border-radius: 5px; border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer; }
+  .palette button:hover { background: #32323a; }
+  .palette .sep { height: 1px; background: #333; margin: 3px 0; }
+  .palette .hint { color: #777; font-size: 9px; line-height: 1.3; margin-top: 4px; }
+
+  #status { position: fixed; bottom: 16px; right: 18px; z-index: 1200; color: #7ed957; background: rgba(23,23,27,.92);
+    border: 1px solid #2d4a2d; padding: 6px 12px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .25s; }
+  #status:not(:empty) { opacity: 1; }
+
+  /* The document stage: pages stacked + scrollable, dark gutter. */
+  #doc { min-height: 100vh; padding: 88px 24px 48px; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+
+  /* Editor-only metadata over each page. */
+  .page-badge { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .12em; color: #8a8f99; user-select: none; }
+  .frame { cursor: move; }
+  .frame:hover { outline: 1px dashed rgba(10,132,255,.55); outline-offset: -1px; }
+  .frame.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  [contenteditable="true"] { outline: 2px solid #ffd24a !important; cursor: text; }
+
+  @media print { .toolbar, .palette, #status, .page-badge { display: none !important; } #doc { padding: 0; gap: 0; display: block; } }
+</style>
+<script src="vendor/moveable.min.js"></script>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="grp"><strong>comic editor</strong> · working.html</span>
+  <span class="grp"><button id="save">Save → disk</button><button id="undo">↶ Undo</button><button id="redo">↷ Redo</button></span>
+  <span class="grp"><button id="guides">Guides</button><button id="reload">Reload from disk</button><button id="print">Print / PDF</button></span>
+  <span class="grp" id="tip">drag to move · double-click text to edit · select + cast →</span>
+</div>
+
+<div class="palette" id="palette">
+  <div class="ph">Cast selected to</div>
+  <button data-cast="panel">▭ Panel</button>
+  <button data-cast="card">▢ Card</button>
+  <div class="sep"></div>
+  <button data-cast="caption">¶ Caption</button>
+  <button data-cast="label">▮ Label</button>
+  <button data-cast="speech">❝ Speech</button>
+  <button data-cast="thought">❛ Thought</button>
+  <div class="hint">Select a frame, then cast. Looks come from comic.css.</div>
+</div>
+
+<div id="doc"><div style="color:#cdd6e8; padding:80px">Loading working.html…</div></div>
+
+<script>
+(() => {
+  const doc = document.getElementById('doc');
+  const POS = ['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right','middle-center','below-frame'];
+  const TEXT = ['caption','label','speech','thought'];
+  let tmpl = null;        // parsed working.html (preserves <head> + constraints comment)
+  let mv = null, selected = null;
+  let history = [], hIdx = -1;
+
+  const toast = m => { const s = document.getElementById('status'); s.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => s.textContent = '', 1600); };
+
+  // ── Load / reload ──────────────────────────────────────────────────────────
+  async function load() {
+    const text = await (await fetch('working.html', { cache: 'no-store' })).text();
+    tmpl = new DOMParser().parseFromString(text, 'text/html');
+    doc.innerHTML = tmpl.body.innerHTML;       // inject the pages
+    decorate();
+    history = []; hIdx = -1; pushHistory();
+    setupMoveable();
+  }
+
+  // Editor-only badges above each page (kept out of #doc's .page elements).
+  function decorate() {
+    [...doc.querySelectorAll(':scope > .page')].forEach((pg, i) => {
+      const prev = pg.previousElementSibling;
+      if (prev && prev.classList.contains('page-badge')) { prev.textContent = 'PAGE ' + (i + 1); return; }
+      const b = document.createElement('div'); b.className = 'page-badge'; b.textContent = 'PAGE ' + (i + 1);
+      doc.insertBefore(b, pg);
+    });
+  }
+
+  // ── History (snapshots of the cleaned pages) ────────────────────────────────
+  function pageSnapshot() {
+    return [...doc.querySelectorAll(':scope > .page')].map(p => cleanClone(p).outerHTML).join('\n\n');
+  }
+  function pushHistory() {
+    const snap = pageSnapshot();
+    history = history.slice(0, hIdx + 1); history.push(snap);
+    if (history.length > 100) history.shift();
+    hIdx = history.length - 1; updateButtons();
+  }
+  function applyHistory() {
+    selected = null; if (mv) mv.target = null;
+    [...doc.querySelectorAll(':scope > .page, :scope > .page-badge')].forEach(n => n.remove());
+    const frag = document.createRange().createContextualFragment(history[hIdx]);
+    doc.insertBefore(frag, doc.firstChild);
+    decorate(); updateButtons();
+  }
+  const undo = () => { if (hIdx > 0) { hIdx--; applyHistory(); } };
+  const redo = () => { if (hIdx < history.length - 1) { hIdx++; applyHistory(); } };
+  function updateButtons() {
+    document.getElementById('undo').disabled = hIdx <= 0;
+    document.getElementById('redo').disabled = hIdx >= history.length - 1;
+  }
+
+  // ── Save → working.html on disk ─────────────────────────────────────────────
+  function cleanClone(node) {
+    const c = node.cloneNode(true);
+    c.querySelectorAll('.page-badge, .moveable-control-box, .moveable-area, .moveable-line, .moveable-control').forEach(n => n.remove());
+    c.classList && c.classList.remove('selected');
+    c.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
+    c.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
+    return c;
+  }
+  async function save() {
+    const pages = [...doc.querySelectorAll(':scope > .page')].map(p => cleanClone(p).outerHTML).join('\n\n');
+    tmpl.body.innerHTML = '\n\n' + pages + '\n\n';
+    const html = '<!DOCTYPE html>\n' + tmpl.documentElement.outerHTML + '\n';
+    try {
+      const r = await fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html }) });
+      const res = await r.json();
+      toast(res.ok ? 'saved → working.html ✓' : 'save failed');
+    } catch (e) { toast('save failed: ' + e.message); }
+  }
+
+  // ── Moveable: drag / resize, committed to inline % ──────────────────────────
+  function commitToPercent(el) {
+    const page = el.closest('.page'); if (!page) return;
+    const pw = page.clientWidth, ph = page.clientHeight;
+    const pct = (v, d) => (parseFloat(v) / d * 100).toFixed(2) + '%';
+    el.style.left = pct(el.style.left, pw); el.style.top = pct(el.style.top, ph);
+    el.style.width = pct(el.style.width, pw); el.style.height = pct(el.style.height, ph);
+  }
+  function setupMoveable() {
+    if (mv) return;
+    mv = new Moveable(doc, { draggable: true, resizable: true, origin: false, snappable: true, snapThreshold: 6, keepRatio: false });
+    const px = (el, p, v) => el.style[p] = v + 'px';
+    mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
+    mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
+    mv.on('dragEnd', e => { if (e.isDrag) { commitToPercent(e.target); pushHistory(); } });
+    mv.on('resizeEnd', e => { if (e.lastEvent) { commitToPercent(e.target); pushHistory(); } });
+    doc.addEventListener('mousedown', e => {
+      if (mv.isMoveableElement(e.target)) return;
+      if (e.target.isContentEditable) return;
+      selectFrame(e.target.closest('.frame'));
+    });
+  }
+  function selectFrame(fr) {
+    [...doc.querySelectorAll('.frame.selected')].forEach(f => f.classList.remove('selected'));
+    selected = fr || null;
+    mv.target = fr || null;
+    if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
+    mv.updateRect();
+    if (fr) fr.classList.add('selected');
+  }
+
+  // ── Cast (the palette) — change a frame's primitive in place ────────────────
+  function wrapCardBody(el) {
+    if (el.querySelector(':scope > .card-body')) return;
+    const body = document.createElement('div'); body.className = 'card-body';
+    [...el.querySelectorAll(':scope > .prim')].forEach(p => body.appendChild(p));
+    el.appendChild(body);
+  }
+  function unwrapCardBody(el) {
+    const body = el.querySelector(':scope > .card-body'); if (!body) return;
+    [...body.children].forEach(c => el.appendChild(c)); body.remove();
+  }
+  function setPrimType(p, type) {
+    const pos = [...p.classList].find(c => POS.includes(c));
+    p.className = 'prim ' + type + (pos ? ' ' + pos : '');
+  }
+  function castSelected(type) {
+    if (!selected) { toast('select a frame first'); return; }
+    const el = selected;
+    if (type === 'panel') { el.classList.remove('card', 'horizontal', 'polaroid'); unwrapCardBody(el); }
+    else if (type === 'card') { el.classList.add('card'); wrapCardBody(el); }
+    else if (TEXT.includes(type)) {
+      const prims = el.querySelectorAll('.prim');
+      if (prims.length) prims.forEach(p => setPrimType(p, type));
+      else {
+        const host = el.querySelector(':scope > .card-body') || el;
+        const d = document.createElement('div');
+        d.className = 'prim ' + type + (el.classList.contains('card') ? '' : ' top-left');
+        d.textContent = 'New ' + type; host.appendChild(d);
+      }
+    }
+    pushHistory(); toast('cast → ' + type);
+  }
+
+  // ── Inline text editing (double-click) ──────────────────────────────────────
+  const EDITABLE = '.prim, .pt-head, .pt-body, .ch-kicker, .ch-sub, .cards-foot, .chapter-title div';
+  doc.addEventListener('dblclick', e => {
+    const t = e.target.closest(EDITABLE); if (!t) return;
+    t.contentEditable = 'true'; t.focus();
+    t.addEventListener('blur', () => { t.removeAttribute('contenteditable'); pushHistory(); }, { once: true });
+  });
+
+  // ── Wiring ──────────────────────────────────────────────────────────────────
+  document.getElementById('save').onclick = save;
+  document.getElementById('undo').onclick = undo;
+  document.getElementById('redo').onclick = redo;
+  document.getElementById('reload').onclick = () => { if (confirm('Reload from disk and discard unsaved edits?')) load(); };
+  document.getElementById('guides').onclick = () => document.querySelectorAll('.guides').forEach(g => g.style.display = g.style.display === 'none' ? '' : 'none');
+  document.getElementById('print').onclick = () => window.print();
+  document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
+  window.addEventListener('keydown', e => {
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') selectFrame(null);
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
