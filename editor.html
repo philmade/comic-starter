@@ -185,27 +185,44 @@
     mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
     mv.on('dragEnd', e => { document.body.classList.remove('dragging'); if (e.isDrag) { commitToPercent(e.target); pushHistory(); } });
     mv.on('resizeEnd', e => { document.body.classList.remove('dragging'); if (e.lastEvent) { commitToPercent(e.target); pushHistory(); } });
+    // Group (multi-select): Moveable transforms all targets together.
+    mv.on('dragGroupStart', () => document.body.classList.add('dragging'));
+    mv.on('dragGroup', e => e.events.forEach(ev => { px(ev.target, 'left', ev.left); px(ev.target, 'top', ev.top); }));
+    mv.on('dragGroupEnd', e => { document.body.classList.remove('dragging'); e.events.forEach(ev => commitToPercent(ev.target)); pushHistory(); });
+    mv.on('resizeGroupStart', () => document.body.classList.add('dragging'));
+    mv.on('resizeGroup', e => e.events.forEach(ev => { px(ev.target, 'width', ev.width); px(ev.target, 'height', ev.height); px(ev.target, 'left', ev.drag.left); px(ev.target, 'top', ev.drag.top); }));
+    mv.on('resizeGroupEnd', e => { document.body.classList.remove('dragging'); e.events.forEach(ev => commitToPercent(ev.target)); pushHistory(); });
     doc.addEventListener('mousedown', e => {
       if (mv.isMoveableElement(e.target)) return;
       if (e.target.isContentEditable) return;
       const prim = e.target.closest('.prim');                 // a caption/speech/label/thought
-      selectFrame(prim && !prim.closest('.frame.card') ? prim : e.target.closest('.frame'));
+      const target = prim && !prim.closest('.frame.card') ? prim : e.target.closest('.frame');
+      if (e.shiftKey || e.metaKey) toggleSelection(target);   // add/remove from a multi-selection (across panels)
+      else selectFrame(target);
     });
   }
-  function selectFrame(el) {                                  // el = a frame OR a prim
+  let selection = [];                                          // current selection (1 = single, >1 = group)
+  function setSelection(els) {
+    selection = (els || []).filter(Boolean);
     [...doc.querySelectorAll('.selected, .is-parent')].forEach(n => n.classList.remove('selected', 'is-parent'));
-    if (el && el.classList.contains('prim')) {
-      normalizePrim(el);
-      const frame = el.closest('.frame');
-      if (frame) frame.classList.add('is-parent');           // colour-code: show which frame it belongs to
-    }
-    selected = el || null;
-    mv.target = el || null;
-    const page = el && el.closest('.page');                    // snap to this page's guides + every other element
-    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-bleed, .g-trim, .g-quiet, .g-safe, .g-inner, .frame, .prim')].filter(n => n !== el) : [];
+    selection.forEach(el => {
+      if (el.classList.contains('prim')) {
+        normalizePrim(el);
+        const frame = el.closest('.frame'); if (frame) frame.classList.add('is-parent');   // colour-code its parent
+      }
+      el.classList.add('selected');
+    });
+    selected = selection[selection.length - 1] || null;        // primary (for cast / text edit)
+    mv.target = selection.length > 1 ? selection : (selection[0] || null);
+    const page = selected && selected.closest('.page');        // snap to this page's guides + every other element
+    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-bleed, .g-trim, .g-quiet, .g-safe, .g-inner, .frame, .prim')].filter(n => !selection.includes(n)) : [];
     if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
     mv.updateRect();
-    if (el) el.classList.add('selected');
+  }
+  function selectFrame(el) { setSelection(el ? [el] : []); }   // single select (selectFrame(null) clears)
+  function toggleSelection(el) {
+    if (!el) return;
+    setSelection(selection.includes(el) ? selection.filter(n => n !== el) : [...selection, el]);
   }
   // A prim positioned by class (.top-left…) -> explicit inline % at its current spot,
   // so Moveable can move/resize it cleanly (class transforms removed).
@@ -253,11 +270,11 @@
     pushHistory(); toast('cast → ' + type);
   }
   function deleteSelected() {
-    if (!selected) { toast('nothing selected'); return; }
-    const el = selected;
+    if (!selection.length) { toast('nothing selected'); return; }
+    const els = selection.slice();
     selectFrame(null);                                         // clear selection + parent highlight + Moveable
-    el.remove();
-    pushHistory(); toast('deleted');
+    els.forEach(el => el.remove());
+    pushHistory(); toast('deleted ' + (els.length > 1 ? els.length : ''));
   }
 
   // ── Inline text editing (double-click) ──────────────────────────────────────
@@ -293,10 +310,12 @@
 
   // ── Arrow-key nudge of the selection (1px; Shift = 10px). Uses layout px, so it's exact at any zoom. ──
   function nudge(dx, dy) {
-    if (!selected) return;
-    const ref = selected.offsetParent; if (!ref) return;
-    selected.style.left = ((selected.offsetLeft + dx) / ref.clientWidth * 100).toFixed(2) + '%';
-    selected.style.top  = ((selected.offsetTop  + dy) / ref.clientHeight * 100).toFixed(2) + '%';
+    if (!selection.length) return;
+    selection.forEach(el => {                                  // nudge the whole selection
+      const ref = el.offsetParent; if (!ref) return;
+      el.style.left = ((el.offsetLeft + dx) / ref.clientWidth * 100).toFixed(2) + '%';
+      el.style.top  = ((el.offsetTop  + dy) / ref.clientHeight * 100).toFixed(2) + '%';
+    });
     if (mv) mv.updateRect();
     document.body.classList.add('dragging');                 // hide handles while nudging; restore ~0.45s after the last keypress
     clearTimeout(nudge._t); nudge._t = setTimeout(() => { document.body.classList.remove('dragging'); if (mv) mv.updateRect(); }, 450);
