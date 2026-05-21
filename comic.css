@@ -29,6 +29,7 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .g-quiet { position: absolute; inset: var(--bleed);                      border: var(--quiet) solid rgba(232,168,58,.16); }
 .g-trim  { position: absolute; inset: var(--bleed);                      border: 1px dashed rgba(0,0,0,.40); }
 .g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet)); border: 1px dashed rgba(224,49,49,.50); }
+.g-inner { position: absolute; inset: calc(var(--bleed) + var(--quiet) + 1.5mm); border: 1px dotted rgba(70,130,210,.55); }  /* content margin — snap captions/labels here */
 
 /* FRAME — an image + its primitives, positioned in % of the page. */
 /* overflow:visible so a caption can sit below/over the frame edge; the image is

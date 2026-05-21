@@ -201,7 +201,7 @@
     selected = el || null;
     mv.target = el || null;
     const page = el && el.closest('.page');                    // snap to this page's guides + every other element
-    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-trim, .g-safe, .g-quiet, .frame, .prim')].filter(n => n !== el) : [];
+    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-bleed, .g-trim, .g-quiet, .g-safe, .g-inner, .frame, .prim')].filter(n => n !== el) : [];
     if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
     mv.updateRect();
     if (el) el.classList.add('selected');
