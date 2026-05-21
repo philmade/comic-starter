@@ -91,6 +91,13 @@
   .frame.card .prim.label { font-family: 'Bangers', cursive; color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
   .frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
 
+  /* Polaroid variant — white mat, tilt, drop shadow. Assign per-frame:
+     f.variant='polaroid', f.rot=<deg>. A reusable look any comic can use. */
+  .frame.card.polaroid { background: #fff; padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
+  .frame.card.polaroid > img { max-height: 80%; }
+  .frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
+  .frame.card.polaroid .prim.label { font-family: 'Special Elite', monospace; font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
+
   .handle { display: none; position: absolute; width: 13px; height: 13px; background: #0a84ff; border: 2px solid #fff; border-radius: 50%; z-index: 30; }
   .frame.selected .handle { display: block; }
   .handle.nw { left: -7px;  top: -7px;    cursor: nwse-resize; }
@@ -381,8 +388,9 @@
   }
   function makeFrame(f) {
     const el = document.createElement('div');
-    el.className = 'frame' + (f.card ? ' card' : '') + (f.dir === 'h' ? ' horizontal' : ''); el.dataset.id = f.fid;
+    el.className = 'frame' + (f.card ? ' card' : '') + (f.dir === 'h' ? ' horizontal' : '') + (f.variant ? ' ' + f.variant : ''); el.dataset.id = f.fid;
     el.style.left = f.x + '%'; el.style.top = f.y + '%'; el.style.width = f.w + '%'; el.style.height = f.h + '%';
+    if (f.rot) el.style.setProperty('--rot', f.rot + 'deg');
     if (f.src) { const img = document.createElement('img'); img.src = f.src; img.alt = ''; el.appendChild(img); }
     const body = f.card ? document.createElement('div') : el;     // cards wrap text so it can sit beside the image
     if (f.card) { body.className = 'card-body'; el.appendChild(body); }
