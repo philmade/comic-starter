@@ -51,6 +51,9 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
 .frame.card.polaroid .prim.label { font-family: 'Special Elite', monospace; font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
 
+/* Matted — a clean stroke/frame hugging the image (no polaroid lip). --mat = stroke colour, --mat-w = stroke width. */
+.frame.matted { border: var(--mat-w, 7px) solid var(--mat, #2b2b2e); box-shadow: 0 6px 18px rgba(0,0,0,.30); transform: rotate(var(--rot, 0deg)); transform-origin: center; }
+
 /* Primitives positioned within their frame by class. */
 .prim { position: absolute; z-index: 12; max-width: 78%; }
 .prim.caption, .prim.label { background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355; padding: 7px 10px; font-family: 'Special Elite', monospace; font-size: 9.5px; line-height: 1.4; }
