@@ -60,8 +60,11 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .prim { position: absolute; z-index: 12; max-width: 78%; }
 .prim.caption, .prim.label { background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355; padding: 7px 10px; font-family: 'Special Elite', monospace; font-size: 9.5px; line-height: 1.4; }
 .prim.label { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 8.5px; }
-.prim.speech { background: #fff; color: #111; border: 2px solid #111; border-radius: 16px; padding: 7px 11px; font-family: 'Bangers', cursive; font-size: 13px; line-height: 1.2; box-shadow: 2px 3px 0 rgba(0,0,0,.3); }
-.prim.thought { background: #fff; color: #111; border: 2.5px solid #111; border-radius: 60% 45% 55% 50%; padding: 10px 14px; font-family: 'Bangers', cursive; font-size: 12px; font-style: italic; }
+/* Bubbles: text centred on both axes so it stays centred at any size, with
+   padding generous enough that the rounded/elliptical shape never clips it. */
+.prim.speech, .prim.thought { display: flex; align-items: center; justify-content: center; text-align: center; background: #fff; color: #111; font-family: 'Bangers', cursive; line-height: 1.12; }
+.prim.speech { border: 2px solid #111; border-radius: 20px; padding: 9px 18px; font-size: 13px; box-shadow: 2px 3px 0 rgba(0,0,0,.3); }
+.prim.thought { border: 2.5px solid #111; border-radius: 50%; padding: 15px 32px; font-size: 12px; font-style: italic; }
 .prim.top-left { top: 5%; left: 5%; } .prim.top-center { top: 5%; left: 50%; transform: translateX(-50%); } .prim.top-right { top: 5%; right: 5%; }
 .prim.bottom-left { bottom: 5%; left: 5%; } .prim.bottom-center { bottom: 5%; left: 50%; transform: translateX(-50%); } .prim.bottom-right { bottom: 5%; right: 5%; }
 .prim.middle-center { top: 50%; left: 50%; transform: translate(-50%,-50%); } .prim.below-frame { bottom: 4%; left: 5%; }
