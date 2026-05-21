@@ -79,17 +79,20 @@
   let tmpl = null;        // parsed working.html (preserves <head> + constraints comment)
   let mv = null, selected = null;
   let history = [], hIdx = -1;
+  let saveTimer = null, ready = false;   // autosave debounce + load guard
 
   const toast = m => { const s = document.getElementById('status'); s.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => s.textContent = '', 1600); };
 
   // ── Load / reload ──────────────────────────────────────────────────────────
   async function load() {
+    ready = false;                             // don't autosave the freshly-loaded content
     const text = await (await fetch('working.html', { cache: 'no-store' })).text();
     tmpl = new DOMParser().parseFromString(text, 'text/html');
     doc.innerHTML = tmpl.body.innerHTML;       // inject the pages
     decorate();
     history = []; hIdx = -1; pushHistory();
     setupMoveable();
+    ready = true;
   }
 
   // Editor-only badges above each page (kept out of #doc's .page elements).
@@ -111,6 +114,7 @@
     history = history.slice(0, hIdx + 1); history.push(snap);
     if (history.length > 100) history.shift();
     hIdx = history.length - 1; updateButtons();
+    if (ready) scheduleSave();                 // autosave on every change
   }
   function applyHistory() {
     selected = null; if (mv) mv.target = null;
@@ -135,14 +139,18 @@
     c.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     return c;
   }
-  async function save() {
+  function serialize() {
     const pages = [...doc.querySelectorAll(':scope > .page')].map(p => cleanClone(p).outerHTML).join('\n\n');
     tmpl.body.innerHTML = '\n\n' + pages + '\n\n';
-    const html = '<!DOCTYPE html>\n' + tmpl.documentElement.outerHTML + '\n';
+    return '<!DOCTYPE html>\n' + tmpl.documentElement.outerHTML + '\n';
+  }
+  function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }   // debounced autosave
+  async function save() {
+    clearTimeout(saveTimer); saveTimer = null;
     try {
-      const r = await fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html }) });
+      const r = await fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html: serialize() }) });
       const res = await r.json();
-      toast(res.ok ? 'saved → working.html ✓' : 'save failed');
+      toast(res.ok ? 'saved ✓' : 'save failed');
     } catch (e) { toast('save failed: ' + e.message); }
   }
 
@@ -265,6 +273,13 @@
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { e.preventDefault(); deleteSelected(); }
     else if (e.key === 'Escape') selectFrame(null);
+  });
+
+  // Flush a pending autosave on refresh/close so nothing in the debounce window is lost.
+  window.addEventListener('beforeunload', () => {
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html: serialize() }), keepalive: true });
   });
 
   load();
