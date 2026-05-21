@@ -168,7 +168,8 @@
     el.style.left   = (el.offsetLeft   / rw * 100).toFixed(2) + '%';
     el.style.top    = (el.offsetTop    / rh * 100).toFixed(2) + '%';
     el.style.width  = (el.offsetWidth  / rw * 100).toFixed(2) + '%';
-    el.style.height = (el.offsetHeight / rh * 100).toFixed(2) + '%';
+    if (el.classList.contains('caption') || el.classList.contains('label')) el.style.height = '';   // text boxes hug their text (no dead space)
+    else el.style.height = (el.offsetHeight / rh * 100).toFixed(2) + '%';
     if (el.classList.contains('prim')) el.style.maxWidth = 'none';   // let the dragged width take effect
   }
   function setupMoveable() {
