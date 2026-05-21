@@ -65,6 +65,10 @@
   /* Card cell: image on top, text stacked below (no caption boxes) */
   .frame.card { background: #f6f4ef; overflow: hidden; display: flex; flex-direction: column; }
   .frame.card > img { position: static; inset: auto; width: 100%; height: auto; max-height: 56%; object-fit: cover; flex: 0 0 auto; }
+  .frame.card.horizontal { flex-direction: row; align-items: stretch; }
+  .frame.card.horizontal > img { width: 42%; height: 100%; max-height: none; flex: 0 0 42%; }
+  .frame.card .card-body { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .frame.card.horizontal .card-body { flex: 1; justify-content: center; padding-left: 8px; }
   .frame.card .prim { position: static !important; transform: none !important; max-width: none; margin: 2px 7px 0; padding: 0; background: transparent; border: none; box-shadow: none; border-radius: 0; }
   .frame.card .prim.label { font-family: 'Bangers', cursive; color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
   .frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
@@ -127,7 +131,7 @@
     <button id="addpage">+ Page</button><button id="delpage">⌫ empty</button>
   </span>
   <span class="grp">Selected frame → <button id="toprev">↤ prev page</button><button id="tonext">next page ↦</button></span>
-  <span class="grp">Cards: <button data-cols="1">1-col</button><button data-cols="2">2-col</button><button data-cols="3">3-col</button></span>
+  <span class="grp">Cards: <button data-cols="1">1-col</button><button data-cols="2">2-col</button><button data-cols="3">3-col</button> · <button data-dir="v">⬍ stacked</button><button data-dir="h">⬌ side-by-side</button></span>
   <span class="grp">
     <button id="reimport">Re-import from comic.html</button>
     <button id="guides">Guides</button>
@@ -331,20 +335,22 @@
   }
   function makeFrame(f) {
     const el = document.createElement('div');
-    el.className = 'frame' + (f.card ? ' card' : ''); el.dataset.id = f.fid;
+    el.className = 'frame' + (f.card ? ' card' : '') + (f.dir === 'h' ? ' horizontal' : ''); el.dataset.id = f.fid;
     el.style.left = f.x + '%'; el.style.top = f.y + '%'; el.style.width = f.w + '%'; el.style.height = f.h + '%';
     if (f.src) { const img = document.createElement('img'); img.src = f.src; img.alt = ''; el.appendChild(img); }
+    const body = f.card ? document.createElement('div') : el;     // cards wrap text so it can sit beside the image
+    if (f.card) { body.className = 'card-body'; el.appendChild(body); }
     (f.prims || []).forEach(p => {
       const pr = document.createElement('div');
       pr.className = 'prim ' + p.type + ' ' + p.pos;
       pr.textContent = p.text;
-      el.appendChild(pr);
+      body.appendChild(pr);
     });
     (f.lines || []).forEach((t, i) => {                            // text-only card items (cards container)
       const pr = document.createElement('div');
       pr.className = 'prim ' + (i === 0 ? 'label' : 'caption');
       pr.textContent = t;
-      el.appendChild(pr);
+      body.appendChild(pr);
     });
     ['nw','ne','sw','se'].forEach(c => { const h = document.createElement('div'); h.className = 'handle ' + c; h.dataset.corner = c; el.appendChild(h); });
     el.addEventListener('pointerdown', e => { const corner = e.target.dataset.corner; onDown(e, el, f, corner ? 'resize' : 'move', corner); });
@@ -438,6 +444,14 @@
     save(); render();
   }
 
+  // Flip the current page's cards between stacked (image over text) and side-by-side (image | text).
+  function setCardDir(dir) {
+    const cards = layout.pages[current].frames.filter(f => f.card);
+    if (!cards.length) return;
+    cards.forEach(f => f.dir = dir);
+    save(); render();
+  }
+
   // Phase-1 broad strokes: move the selected frame to an adjacent page, and
   // add/remove pages so you can re-pack frames across the comic.
   function moveFrameToPage(delta) {
@@ -480,6 +494,7 @@
   document.getElementById('toprev').onclick = () => moveFrameToPage(-1);
   document.getElementById('tonext').onclick = () => moveFrameToPage(1);
   document.querySelectorAll('.toolbar [data-cols]').forEach(b => b.onclick = () => reflowCols(+b.dataset.cols));
+  document.querySelectorAll('.toolbar [data-dir]').forEach(b => b.onclick = () => setCardDir(b.dataset.dir));
   window.addEventListener('keydown', e => {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === '[') moveFrameToPage(-1);
