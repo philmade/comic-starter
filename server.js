@@ -24,6 +24,11 @@ function safeJoin(urlPath) {                          // block path traversal ou
 }
 
 http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');             // dev: allow the editor origin to POST /save
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+    return res.end();
+  }
   if (req.method === 'POST' && req.url === '/save') {
     let body = '';
     req.on('data', c => (body += c));
