@@ -1,0 +1,87 @@
+/* ============================================================================
+   comic-starter — PRINT DESIGN SYSTEM
+   The single stylesheet for a comic's pages. A "working document" is just HTML
+   that uses these classes; THIS FILE decides how it renders (screen + print).
+   Change a look HERE, or add a NAMED VARIANT here — never with per-page CSS.
+   Trim 157×240mm + 3mm bleed. Mixam UK Standard Paperback Comic.
+   ============================================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Special+Elite&family=Inter:wght@400;600;700&display=swap');
+
+:root {
+  --bleed: 3mm; --quiet: 5mm;             /* 3mm bleed, 5mm quiet/safe margin   */
+  --page-w: 163mm; --page-h: 246mm;       /* trim 157×240 + 3mm bleed each edge */
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; font-family: 'Inter', sans-serif; }
+
+/* Screen preview: dark gutter, pages stacked + scrollable. */
+@media screen {
+  body { background: #2b2b30; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .page { box-shadow: 0 6px 30px rgba(0,0,0,.45); }
+}
+
+/* THE PAGE — a fixed print canvas. Nothing escapes it (overflow clipped). */
+.page { position: relative; width: var(--page-w); height: var(--page-h); background: #f6f4ef; overflow: hidden; }
+
+/* Guides (screen only) — the safe area you must keep important content inside. */
+.guides { position: absolute; inset: 0; pointer-events: none; z-index: 60; }
+.g-bleed { position: absolute; inset: 0;                                 border: var(--bleed) solid rgba(64,158,158,.14); }
+.g-quiet { position: absolute; inset: var(--bleed);                      border: var(--quiet) solid rgba(232,168,58,.16); }
+.g-trim  { position: absolute; inset: var(--bleed);                      border: 1px dashed rgba(0,0,0,.40); }
+.g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet)); border: 1px dashed rgba(224,49,49,.50); }
+
+/* FRAME — an image + its primitives, positioned in % of the page. */
+.frame { position: absolute; z-index: 10; overflow: hidden; background: #20222b; }
+.frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* Card — image on top, text stacked below. */
+.frame.card { background: #f6f4ef; display: flex; flex-direction: column; }
+.frame.card > img { position: static; inset: auto; width: 100%; height: auto; max-height: 56%; object-fit: cover; flex: 0 0 auto; }
+.frame.card.horizontal { flex-direction: row; align-items: stretch; }
+.frame.card.horizontal > img { width: 42%; height: 100%; max-height: none; flex: 0 0 42%; }
+.frame.card .card-body { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.frame.card.horizontal .card-body { flex: 1; justify-content: center; padding-left: 8px; }
+.frame.card .prim { position: static !important; transform: none !important; max-width: none; margin: 2px 7px 0; padding: 0; background: transparent; border: none; box-shadow: none; border-radius: 0; }
+.frame.card .prim.label { font-family: 'Bangers', cursive; color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
+.frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
+
+/* VARIANT: polaroid — white mat, tilt (--rot), drop shadow. Reusable anywhere. */
+.frame.card.polaroid { background: #fff; padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
+.frame.card.polaroid > img { max-height: 80%; }
+.frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
+.frame.card.polaroid .prim.label { font-family: 'Special Elite', monospace; font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
+
+/* Primitives positioned within their frame by class. */
+.prim { position: absolute; z-index: 12; max-width: 78%; }
+.prim.caption, .prim.label { background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355; padding: 7px 10px; font-family: 'Special Elite', monospace; font-size: 9.5px; line-height: 1.4; }
+.prim.label { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 8.5px; }
+.prim.speech { background: #fff; color: #111; border: 2px solid #111; border-radius: 16px; padding: 7px 11px; font-family: 'Bangers', cursive; font-size: 13px; line-height: 1.2; box-shadow: 2px 3px 0 rgba(0,0,0,.3); }
+.prim.thought { background: #fff; color: #111; border: 2.5px solid #111; border-radius: 60% 45% 55% 50%; padding: 10px 14px; font-family: 'Bangers', cursive; font-size: 12px; font-style: italic; }
+.prim.top-left { top: 5%; left: 5%; } .prim.top-center { top: 5%; left: 50%; transform: translateX(-50%); } .prim.top-right { top: 5%; right: 5%; }
+.prim.bottom-left { bottom: 5%; left: 5%; } .prim.bottom-center { bottom: 5%; left: 50%; transform: translateX(-50%); } .prim.bottom-right { bottom: 5%; right: 5%; }
+.prim.middle-center { top: 50%; left: 50%; transform: translate(-50%,-50%); } .prim.below-frame { bottom: 4%; left: 5%; }
+
+/* Chapter title page. */
+.chapter-title { position: absolute; inset: 12% 9%; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+.chapter-title div { font-family: 'Bangers', cursive; color: #1a1a1a; letter-spacing: .02em; line-height: 1.05; font-size: 30px; }
+.chapter-title div:first-child { font-family: 'Special Elite', monospace; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #8b7355; }
+
+/* Page beat: on-page text block below the image. */
+.page-text { position: absolute; left: 9%; right: 9%; top: 66%; bottom: 5%; z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.page-text .pt-head { font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; }
+.page-text .pt-body { font-family: 'Special Elite', monospace; font-size: 12px; line-height: 1.5; color: #1a1208; max-width: 94%; }
+.page-text.full { top: 8%; justify-content: center; }
+
+/* Cards-container header / footer. */
+.cards-head { position: absolute; left: 8%; right: 8%; top: 3%; text-align: center; z-index: 12; }
+.cards-head .ch-kicker { font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #8a6a3a; }
+.cards-head .ch-sub { font-family: 'Special Elite', monospace; font-size: 9px; color: #2a2218; line-height: 1.4; margin-top: 3px; }
+.cards-foot { position: absolute; left: 8%; right: 8%; bottom: 2.5%; text-align: center; font-family: 'Special Elite', monospace; font-size: 8px; color: #2a2218; z-index: 12; }
+
+/* PRINT — exact page, no chrome, one page per sheet. */
+@page { size: 163mm 246mm; margin: 0; }
+@media print {
+  html, body { background: #fff; padding: 0; display: block; }
+  .page { box-shadow: none; margin: 0; break-after: page; }
+  .guides { display: none !important; }
+}
