@@ -282,6 +282,11 @@
     fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html: serialize() }), keepalive: true });
   });
 
+  // Autosave on ANY change to the document — catches moves/resizes (even drags
+  // that don't end cleanly), text edits, casts, deletes. Debounced via scheduleSave.
+  new MutationObserver(() => { if (ready) scheduleSave(); })
+    .observe(doc, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'], characterData: true });
+
   load();
 })();
 </script>
