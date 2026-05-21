@@ -83,6 +83,14 @@ html, body { margin: 0; font-family: 'Inter', sans-serif; }
 .cards-head .ch-sub { font-family: 'Special Elite', monospace; font-size: 9px; color: #2a2218; line-height: 1.4; margin-top: 3px; }
 .cards-foot { position: absolute; left: 8%; right: 8%; bottom: 2.5%; text-align: center; font-family: 'Special Elite', monospace; font-size: 8px; color: #2a2218; z-index: 12; }
 
+/* Dramatic DARK page (reveals / splashes) — light text on near-black. */
+.page.dark { background: #0a0b0e; }
+.page.dark .cards-head .ch-kicker, .page.dark .page-text .pt-head { color: #e3a73c; }
+.page.dark .cards-head .ch-sub, .page.dark .page-text .pt-body { color: #d7d2c6; }
+.page.dark .prim.caption, .page.dark .prim.label { background: transparent; border: none; color: #ece7db; }
+/* A big closing / reveal line (Bangers). */
+.page-text .pt-punch { font-family: 'Bangers', cursive; font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #f4efe4; margin-top: 10px; }
+
 /* PRINT — exact page, no chrome, one page per sheet. */
 @page { size: 163mm 246mm; margin: 0; }
 @media print {
