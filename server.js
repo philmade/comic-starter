@@ -45,6 +45,49 @@ http.createServer((req, res) => {
     });
     return;
   }
+  // POST /patch — replace (or delete) ONE page's <section> in place: a "diff" save, so
+  // concurrent edits to *other* pages aren't clobbered. body: {file, page, html} | {file, page, op:'delete'}
+  if (req.method === 'POST' && req.url === '/patch') {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      try {
+        const { file, page, html, op } = JSON.parse(body);
+        const dest = safeJoin('/' + String(file || '').replace(/^\/+/, ''));
+        if (!dest || !dest.endsWith('.html')) { res.writeHead(400); return res.end('bad file'); }
+        let text = fs.readFileSync(dest, 'utf8');
+        const re = new RegExp('<section[^>]*\\bdata-page="' + Number(page) + '"[\\s\\S]*?</section>');
+        if (!re.test(text)) { res.writeHead(404); return res.end('page not found'); }
+        text = op === 'delete' ? text.replace(re, '').replace(/\n{3,}/g, '\n\n') : text.replace(re, html);
+        fs.writeFileSync(dest, text, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, page }));
+        console.log('patched', path.relative(ROOT, dest), 'page', page, op || '');
+      } catch (e) { res.writeHead(500); res.end(String(e)); }
+    });
+    return;
+  }
+  // POST /upload — save an uploaded image into images/ (base64 JSON). body: {name, dataB64} -> {ok, path}
+  if (req.method === 'POST' && req.url === '/upload') {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      try {
+        const { name, dataB64 } = JSON.parse(body);
+        const safe = String(name || '').replace(/[^A-Za-z0-9._-]/g, '_');
+        if (!/\.(png|jpe?g|webp|gif)$/i.test(safe)) { res.writeHead(400); return res.end('not an image'); }
+        const imgDir = path.join(ROOT, 'images');
+        const dest = path.join(imgDir, safe);
+        if (dest !== imgDir && !dest.startsWith(imgDir + path.sep)) { res.writeHead(403); return res.end('forbidden'); }
+        fs.mkdirSync(imgDir, { recursive: true });
+        fs.writeFileSync(dest, Buffer.from(dataB64, 'base64'));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, path: 'images/' + safe }));
+        console.log('uploaded', 'images/' + safe, fs.statSync(dest).size, 'bytes');
+      } catch (e) { res.writeHead(500); res.end(String(e)); }
+    });
+    return;
+  }
   let urlPath = req.url.split('?')[0];
   if (urlPath === '/') urlPath = '/working.html';
   const file = safeJoin(urlPath);
