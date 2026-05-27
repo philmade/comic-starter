@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>comic-starter — page-native print stage (prototype v2)</title>
+<!--
+  PROTOTYPE v2 — page-native authoring stage for PRINT.
+
+  Thesis (validated): the page box IS the layout. What you drag/resize on screen
+  is exactly what prints — no web→print transform, no Paged.js. Screen = paper.
+
+  v2 adds the pieces that make it layout-worthy + saveable:
+    · real full-bleed art (panels), multiple pages, add/delete/select
+    · SAVE/VERSION: autosave to localStorage + Export/Import a versioned JSON
+      (the "layout format" — positions stored as % of the page, so identical
+      on screen and on paper).
+
+  Geometry from the Mixam template: trim 157×240mm, bleed 3mm (→163×246mm
+  canvas), quiet/safe 5mm from trim.
+
+  Sample art is pulled from the running local comic server (http://localhost:8000)
+  while we iterate — so we're judging REAL pages, not placeholders. (Integration
+  into editor.js, and web fine-layout, come later.)
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Special+Elite&family=Inter:wght@400;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --bleed: 3mm; --quiet: 5mm;
+    --page-w: 163mm; --page-h: 246mm;   /* trim 157×240 + 2×bleed */
+  }
+  html, body { margin: 0; background: #2b2b30; font-family: 'Inter', sans-serif; color: #e8e8ea; }
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap;
+    gap: 8px; align-items: center; padding: 8px 14px; background: #17171b;
+    border-bottom: 1px solid #000; font-size: 12px;
+  }
+  .toolbar .grp { display: flex; gap: 6px; align-items: center; padding-right: 8px; border-right: 1px solid #333; }
+  .toolbar strong { color: #ffd24a; }
+  button {
+    font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 5px;
+    border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer;
+  }
+  button:hover { background: #32323a; }
+  button:disabled { opacity: .4; cursor: default; }
+  .pageno { min-width: 70px; text-align: center; }
+  #status { border: none; color: #7ed957; min-width: 60px; }
+
+  .stage-wrap { padding: 24px; display: flex; justify-content: center; }
+
+  .page {
+    position: relative; width: var(--page-w); height: var(--page-h);
+    background: #f6f4ef; box-shadow: 0 6px 30px rgba(0,0,0,.45); overflow: hidden;
+  }
+
+  /* Guides — Mixam template colour language; screen only */
+  .guides { position: absolute; inset: 0; pointer-events: none; z-index: 60; }
+  .g-bleed { position: absolute; inset: 0;                                  border: var(--bleed) solid rgba(64,158,158,.14); }
+  .g-quiet { position: absolute; inset: var(--bleed);                        border: var(--quiet) solid rgba(232,168,58,.16); }
+  .g-trim  { position: absolute; inset: var(--bleed);                        border: 1px dashed rgba(0,0,0,.40); }
+  .g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet));   border: 1px dashed rgba(224,49,49,.50); }
+  body.no-guides .guides { display: none; }
+
+  /* Authored elements */
+  .el { position: absolute; z-index: 10; touch-action: none; }
+  .el.selected { outline: 2px solid #0a84ff; }
+  .handle { display: none; position: absolute; width: 13px; height: 13px;
+            background: #0a84ff; border: 2px solid #fff; border-radius: 50%; z-index: 30; }
+  .el.selected .handle { display: block; }
+  .handle.nw { left: -7px;  top: -7px;    cursor: nwse-resize; }
+  .handle.ne { right: -7px; top: -7px;    cursor: nesw-resize; }
+  .handle.sw { left: -7px;  bottom: -7px; cursor: nesw-resize; }
+  .handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+  body.no-guides .handle { display: none !important; }
+
+  .el.panel { overflow: hidden; cursor: move; background: linear-gradient(160deg,#1b2838,#2c3e6b 60%,#1a2440); }
+  .el.panel img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .el.bubble {
+    background: #fff; color: #111; border: 2.5px solid #111; border-radius: 18px;
+    padding: 9px 13px; font-family: 'Bangers', cursive; font-size: 15px;
+    letter-spacing: .02em; line-height: 1.2; cursor: move; box-shadow: 2px 3px 0 rgba(0,0,0,.3);
+  }
+  .el.caption {
+    background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355;
+    padding: 9px 12px; font-family: 'Special Elite', monospace; font-size: 11px;
+    line-height: 1.45; cursor: move;
+  }
+  .el.text.outside-safe { outline: 2px solid #ff2d2d !important; box-shadow: 0 0 0 3px rgba(255,45,45,.25); }
+
+  /* Print: every page, clean, at exact trim+bleed; guides + chrome gone */
+  @page { size: 163mm 246mm; margin: 0; }
+  @media screen { .page:not(.current) { display: none; } }
+  @media print {
+    html, body { background: #fff; }
+    .toolbar { display: none !important; }
+    .stage-wrap { padding: 0; display: block; }
+    .page { display: block !important; margin: 0; box-shadow: none; break-after: page; }
+    .guides, .handle { display: none !important; }
+    .el.selected { outline: none !important; }
+    .el.text.outside-safe { outline: none !important; box-shadow: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="grp"><strong>comic-starter</strong> page stage v2</span>
+  <span class="grp">
+    <button id="prev">◀</button><span class="pageno" id="pageno">1/1</span><button id="next">▶</button>
+    <button id="addpage">+ Page</button><button id="delpage">⌫ Page</button>
+  </span>
+  <span class="grp">
+    Add: <button data-add="panel">Panel</button><button data-add="bubble">Bubble</button><button data-add="caption">Caption</button>
+    <button id="del">Delete</button>
+  </span>
+  <span class="grp">
+    <button id="guides">Guides</button>
+    <button id="export">Export JSON</button>
+    <button id="import">Import JSON</button>
+    <button id="print">Print / PDF</button>
+  </span>
+  <span id="status"></span>
+</div>
+
+<div class="stage-wrap" id="stage"></div>
+<input type="file" id="import-file" accept="application/json" hidden>
+
+<script>
+  const IMG = 'http://localhost:8000/images/';   // real comic art while iterating
+  const STORE = 'comic-starter:page-layout';
+  const uid = () => 'e' + Math.random().toString(36).slice(2, 8);
+
+  // ── The layout format (the thing we save & version) ──────────────────────
+  function seed() {
+    return {
+      format: 'comic-starter/page-layout', version: 1,
+      trim: { w: 157, h: 240, unit: 'mm' }, bleed: 3, quiet: 5,
+      pages: [
+        { id: uid(), els: [ { id: uid(), type: 'panel', src: IMG + 'palomar_lights_intro.webp', x: 0, y: 0, w: 100, h: 100 } ] },
+        { id: uid(), els: [
+          { id: uid(), type: 'panel', src: IMG + 'monastry_flat_moody.webp', x: 0, y: 0, w: 100, h: 62 },
+          { id: uid(), type: 'caption', html: 'George Abell is a graduate student. From this observatory he will discover 2,712 galaxy clusters. But tonight, he just needs clear skies.', x: 6, y: 66, w: 60, h: null },
+          { id: uid(), type: 'bubble', html: 'Clear skies tonight.', x: 56, y: 9, w: 33, h: null },
+        ] },
+        { id: uid(), els: [
+          { id: uid(), type: 'panel', src: IMG + 'web_conference.webp', x: 0, y: 10, w: 100, h: 44 },
+          { id: uid(), type: 'caption', html: 'After the paper, the search opens up. Volunteers in six countries learn to read 1950s plates.', x: 6, y: 60, w: 60, h: null },
+        ] },
+      ],
+    };
+  }
+
+  function load() { try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  let saveTimer = null;
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(doc)); } catch (e) {}
+    const st = document.getElementById('status'); st.textContent = 'saved ✓';
+    clearTimeout(saveTimer); saveTimer = setTimeout(() => st.textContent = '', 1200);
+  }
+
+  let doc = load() || seed();
+  let current = 0, selected = null, drag = null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function guides() {
+    const g = document.createElement('div'); g.className = 'guides';
+    g.innerHTML = '<div class="g-bleed"></div><div class="g-quiet"></div><div class="g-trim"></div><div class="g-safe"></div>';
+    return g;
+  }
+  function makeEl(d) {
+    const el = document.createElement('div');
+    el.className = 'el ' + d.type + (d.type === 'bubble' || d.type === 'caption' ? ' text' : '');
+    el.dataset.id = d.id;
+    el.style.left = d.x + '%'; el.style.top = d.y + '%'; el.style.width = d.w + '%';
+    if (d.h != null) el.style.height = d.h + '%';
+    if (d.type === 'panel') { if (d.src) { const i = document.createElement('img'); i.src = d.src; i.alt = ''; el.appendChild(i); } }
+    else el.insertAdjacentHTML('beforeend', d.html || '');
+    ['nw','ne','sw','se'].forEach(c => {
+      const h = document.createElement('div'); h.className = 'handle ' + c; h.dataset.corner = c; el.appendChild(h);
+    });
+    el.addEventListener('pointerdown', e => {
+      const corner = e.target.dataset.corner;
+      onDown(e, el, d, corner ? 'resize' : 'move', corner);
+    });
+    return el;
+  }
+  function render() {
+    const stage = document.getElementById('stage'); stage.innerHTML = '';
+    doc.pages.forEach((pg, i) => {
+      const pageEl = document.createElement('div');
+      pageEl.className = 'page' + (i === current ? ' current' : '');
+      pg.els.forEach(d => pageEl.appendChild(makeEl(d)));
+      pageEl.appendChild(guides());
+      stage.appendChild(pageEl);
+    });
+    if (selected) document.querySelectorAll('.el').forEach(e => e.classList.toggle('selected', e.dataset.id === selected));
+    document.querySelectorAll('.el.text').forEach(checkSafe);
+    document.getElementById('pageno').textContent = (current + 1) + '/' + doc.pages.length;
+    document.getElementById('prev').disabled = current === 0;
+    document.getElementById('next').disabled = current === doc.pages.length - 1;
+    document.getElementById('delpage').disabled = doc.pages.length <= 1;
+  }
+
+  // ── Drag / resize (writes back to the doc as % → web == print) ────────────
+  function select(id) { selected = id; document.querySelectorAll('.el').forEach(e => e.classList.toggle('selected', e.dataset.id === id)); }
+  function onDown(e, el, d, mode, corner) {
+    e.preventDefault(); select(d.id);
+    const pr = el.closest('.page').getBoundingClientRect(), er = el.getBoundingClientRect();
+    drag = { el, d, mode, corner, pr, startX: e.clientX, startY: e.clientY, left: er.left - pr.left, top: er.top - pr.top, width: er.width, height: er.height };
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+  }
+  function onMove(e) {
+    if (!drag) return;
+    let { left, top, width, height } = drag;
+    if (drag.mode === 'move') {
+      const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+      left = Math.max(0, Math.min(drag.left + dx, drag.pr.width  - width));
+      top  = Math.max(0, Math.min(drag.top  + dy, drag.pr.height - height));
+    } else {
+      // Free resize from whichever corner is grabbed. No aspect lock — the image
+      // fills via object-fit:cover, so it crops/reframes but never squishes.
+      // The opposite corner stays anchored; the dragged corner follows the pointer.
+      const MINW = 30, MINH = 20, c = drag.corner || 'se';
+      const px = Math.max(0, Math.min(e.clientX - drag.pr.left, drag.pr.width));
+      const py = Math.max(0, Math.min(e.clientY - drag.pr.top,  drag.pr.height));
+      const sL = drag.left, sT = drag.top, sR = drag.left + drag.width, sB = drag.top + drag.height;
+      let l, t, r, b;
+      if (c.includes('w')) { l = Math.min(px, sR - MINW); r = sR; } else { l = sL; r = Math.max(px, sL + MINW); }
+      if (c.includes('n')) { t = Math.min(py, sB - MINH); b = sB; } else { t = sT; b = Math.max(py, sT + MINH); }
+      left = l; top = t; width = r - l; height = b - t;
+    }
+    const d = drag.d, el = drag.el;
+    d.x = +(left / drag.pr.width  * 100).toFixed(2); el.style.left = d.x + '%';
+    d.y = +(top  / drag.pr.height * 100).toFixed(2); el.style.top  = d.y + '%';
+    if (drag.mode === 'resize') {
+      d.w = +(width  / drag.pr.width  * 100).toFixed(2); el.style.width  = d.w + '%';
+      d.h = +(height / drag.pr.height * 100).toFixed(2); el.style.height = d.h + '%';
+    }
+    checkSafe(el);
+  }
+  function onUp() { if (drag) { drag = null; save(); } window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); }
+
+  // Live guard: text must stay inside the safe (red) box.
+  function checkSafe(el) {
+    if (!el.classList.contains('text')) return;
+    const safe = el.closest('.page').querySelector('.g-safe');
+    const s = safe.getBoundingClientRect(), r = el.getBoundingClientRect();
+    el.classList.toggle('outside-safe', !(r.left >= s.left - 0.5 && r.top >= s.top - 0.5 && r.right <= s.right + 0.5 && r.bottom <= s.bottom + 0.5));
+  }
+
+  // ── Add / delete / pages ───────────────────────────────────────────────────
+  function addEl(type) {
+    const d = { id: uid(), type, x: 18, y: 18, w: type === 'panel' ? 55 : 42, h: type === 'panel' ? 32 : null };
+    if (type === 'panel') d.src = '';
+    else d.html = type === 'bubble' ? 'New bubble' : 'New caption text.';
+    doc.pages[current].els.push(d); save(); render(); select(d.id);
+  }
+  function delSel() {
+    if (!selected) return;
+    const els = doc.pages[current].els, i = els.findIndex(e => e.id === selected);
+    if (i >= 0) { els.splice(i, 1); selected = null; save(); render(); }
+  }
+  function goPage(i) { current = Math.max(0, Math.min(i, doc.pages.length - 1)); selected = null; render(); }
+  function addPage() { doc.pages.splice(current + 1, 0, { id: uid(), els: [] }); current++; selected = null; save(); render(); }
+  function delPage() { if (doc.pages.length <= 1) return; doc.pages.splice(current, 1); current = Math.max(0, current - 1); selected = null; save(); render(); }
+
+  // ── Save / version: export & import the layout JSON ───────────────────────
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'comic-layout-v' + doc.version + '-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+  function importJSON(file) {
+    const r = new FileReader();
+    r.onload = () => { try { doc = JSON.parse(r.result); current = 0; selected = null; save(); render(); } catch (e) { alert('Not a valid layout JSON.'); } };
+    r.readAsText(file);
+  }
+
+  // ── Wiring ─────────────────────────────────────────────────────────────────
+  document.getElementById('prev').onclick = () => goPage(current - 1);
+  document.getElementById('next').onclick = () => goPage(current + 1);
+  document.getElementById('addpage').onclick = addPage;
+  document.getElementById('delpage').onclick = delPage;
+  document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addEl(b.dataset.add));
+  document.getElementById('del').onclick = delSel;
+  document.getElementById('guides').onclick = () => document.body.classList.toggle('no-guides');
+  document.getElementById('export').onclick = exportJSON;
+  document.getElementById('import').onclick = () => document.getElementById('import-file').click();
+  document.getElementById('import-file').onchange = e => e.target.files[0] && importJSON(e.target.files[0]);
+  document.getElementById('print').onclick = () => window.print();
+  window.addEventListener('keydown', e => {
+    if ((e.key === 'Backspace' || e.key === 'Delete') && selected && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) { e.preventDefault(); delSel(); }
+  });
+
+  render();
+</script>
+</body>
+</html>

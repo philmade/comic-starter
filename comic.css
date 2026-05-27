@@ -1,0 +1,180 @@
+/* ============================================================================
+   comic-starter — PRINT DESIGN SYSTEM
+   The single stylesheet for a comic's pages. A "working document" is just HTML
+   that uses these classes; THIS FILE decides how it renders (screen + print).
+   Change a look HERE, or add a NAMED VARIANT here — never with per-page CSS.
+   Trim 157×240mm + 3mm bleed. Mixam UK Standard Paperback Comic.
+   ============================================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bangers&family=Bebas+Neue&family=Courier+Prime&family=Inter:wght@400;600;700&family=JetBrains+Mono&family=Lora:ital@0;1&family=Luckiest+Guy&family=Merriweather&family=Playfair+Display:ital@0;1&family=Roboto&family=Special+Elite&display=swap');
+
+:root {
+  --bleed: 3mm; --quiet: 5mm;             /* 3mm bleed, 5mm quiet/safe margin   */
+  --page-w: 163mm; --page-h: 246mm;       /* trim 157×240 + 3mm bleed each edge */
+  --gold: #c8761e;                        /* the one editorial accent (rules + emphasis) — reads + prints on cream */
+  /* Font roles — change a comic's whole typography from one place (or override per-comic in working.html's head). */
+  --font-display: 'Bangers', cursive;          /* titles, punch lines, chapter splashes, speech */
+  --font-mono: 'Special Elite', monospace;     /* the typewriter voice — captions, body, kickers, headers */
+  --font-serif: Georgia, 'Times New Roman', serif;  /* editorial lead + pull-quotes + stat numbers */
+  --font-body: 'Inter', sans-serif;            /* base / UI */
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; font-family: var(--font-body); }
+
+/* Screen preview: dark gutter, pages stacked + scrollable. */
+@media screen {
+  body { background: #2b2b30; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .page { box-shadow: 0 6px 30px rgba(0,0,0,.45); }
+}
+
+/* THE PAGE — a fixed print canvas. Nothing escapes it (overflow clipped). */
+.page { position: relative; width: var(--page-w); height: var(--page-h); background: #f6f4ef; overflow: hidden; }
+
+/* Guides (screen only) — the safe area you must keep important content inside. */
+.guides { position: absolute; inset: 0; pointer-events: none; z-index: 60; }
+.g-bleed { position: absolute; inset: 0;                                 border: var(--bleed) solid rgba(64,158,158,.14); }
+.g-quiet { position: absolute; inset: var(--bleed);                      border: var(--quiet) solid rgba(232,168,58,.16); }
+.g-trim  { position: absolute; inset: var(--bleed);                      border: 1px dashed rgba(0,0,0,.40); }
+.g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet)); border: 1px dashed rgba(224,49,49,.50); }
+.g-inner { position: absolute; inset: calc(var(--bleed) + var(--quiet) + 1.5mm); border: 1px dotted rgba(70,130,210,.55); }  /* content margin — snap captions/labels here */
+
+/* FRAME — an image + its primitives, positioned in % of the page. */
+/* overflow:visible so a caption can sit below/over the frame edge; the image is
+   still clipped by object-fit. No z-index, so prims (z:12) float above neighbours. */
+.frame { position: absolute; overflow: visible; background: #20222b; }
+.frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* Card — image on top, text stacked below. */
+.frame.card { background: #f6f4ef; display: flex; flex-direction: column; }
+.frame.card > img { position: static; inset: auto; width: 100%; height: auto; max-height: 56%; object-fit: cover; flex: 0 0 auto; }
+.frame.card.horizontal { flex-direction: row; align-items: stretch; }
+.frame.card.horizontal > img { width: 42%; height: 100%; max-height: none; flex: 0 0 42%; }
+.frame.card .card-body { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.frame.card.horizontal .card-body { flex: 1; justify-content: center; padding-left: 8px; }
+.frame.card .prim { position: static !important; transform: none !important; max-width: none; margin: 2px 7px 0; padding: 0; background: transparent; border: none; box-shadow: none; border-radius: 0; }
+.frame.card .prim.label { font-family: var(--font-display); color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
+.frame.card .prim.caption { font-family: var(--font-mono); color: #2a2218; font-size: 8px; line-height: 1.4; }
+
+/* VARIANT: polaroid — white mat, tilt (--rot), drop shadow. Reusable anywhere.
+   height:auto = the polaroid sizes to its image + caption (you set WIDTH; height follows the
+   photo's aspect). This is what stops the dead white space below the photo. */
+.frame.card.polaroid { background: var(--mat, #fff); height: auto !important; padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
+.frame.card.polaroid > img { max-height: none; }
+.frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
+.frame.card.polaroid .prim.label { font-family: var(--font-mono); font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
+
+/* Matted — a clean stroke/frame hugging the image (no polaroid lip). --mat = stroke colour, --mat-w = stroke width. */
+.frame.matted { border: var(--mat-w, 7px) solid var(--mat, #2b2b2e); box-shadow: 0 6px 18px rgba(0,0,0,.30); transform: rotate(var(--rot, 0deg)); transform-origin: center; }
+/* Comic stroke — a white margin around the image with its own black keyline (classic panel edge). --stroke-w tunes the white margin. */
+.frame.stroked { border: var(--stroke-w, 6px) solid #fff; box-shadow: 0 0 0 2.5px #111; }
+.frame.stroked > img { inset: 0; }
+
+/* Cropped/reframed image — the panel clips an image that's been panned (object-position) + zoomed (scale on the img). Set by the editor's Crop mode; renders the same in print/web (pure CSS). */
+.frame.cropped { overflow: hidden; }
+
+/* Primitives positioned within their frame by class. */
+.prim { position: absolute; z-index: 12; max-width: 78%; }
+.prim.caption, .prim.label { background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355; padding: 7px 10px; font-family: var(--font-mono); font-size: 9.5px; line-height: 1.4; }
+.prim.label { background: #17100a; color: #f5efe2; border-color: #000; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 8.5px; }
+/* Bubbles: text centred on both axes so it stays centred at any size, with
+   padding generous enough that the rounded/elliptical shape never clips it. */
+.prim.speech, .prim.thought { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: #fff; color: #111; font-family: var(--font-display); line-height: 1.12; }
+.prim.speech { border: 2px solid #111; border-radius: 20px; padding: 9px 18px; font-size: 13px; box-shadow: 2px 3px 0 rgba(0,0,0,.3); }
+.prim.thought { border: 2.5px solid #111; border-radius: 50%; padding: 15px 32px; font-size: 12px; font-style: italic; }
+.prim.top-left { top: 5%; left: 5%; } .prim.top-center { top: 5%; left: 50%; transform: translateX(-50%); } .prim.top-right { top: 5%; right: 5%; }
+.prim.bottom-left { bottom: 5%; left: 5%; } .prim.bottom-center { bottom: 5%; left: 50%; transform: translateX(-50%); } .prim.bottom-right { bottom: 5%; right: 5%; }
+.prim.middle-center { top: 50%; left: 50%; transform: translate(-50%,-50%); } .prim.below-frame { bottom: 4%; left: 5%; }
+
+/* Chapter title page. */
+.chapter-title { position: absolute; inset: 12% 9%; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+.chapter-title div { font-family: var(--font-display); color: #1a1a1a; letter-spacing: .02em; line-height: 1.05; font-size: 30px; }
+.chapter-title div:first-child { font-family: var(--font-mono); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #8b7355; }
+
+/* Dramatic chapter splash — high-contrast 50s/60s title card.
+   Use: <section class="page dark"> + .chapter-title with .ct-eyebrow / .ct-number / .ct-title. */
+.page.dark .chapter-title .ct-eyebrow { font-family: var(--font-serif); font-style: italic; font-size: 18px; letter-spacing: .03em; color: #e8d9b0; margin-bottom: 16px; }
+.page.dark .chapter-title .ct-number { display: flex; align-items: center; justify-content: center; gap: 14px; font-family: var(--font-display); font-size: 22px; letter-spacing: .3em; text-transform: uppercase; color: #d4a843; margin-bottom: 4px; }
+.page.dark .chapter-title .ct-number::before, .page.dark .chapter-title .ct-number::after { content: ""; width: 32px; height: 2px; background: #d4a843; }
+.page.dark .chapter-title .ct-title { font-family: var(--font-display); font-size: 66px; line-height: .9; letter-spacing: .02em; text-transform: uppercase; color: #f6f2e6; text-shadow: 3px 4px 0 #000; }
+
+/* Page beat: on-page text block below the image. */
+.page-text { position: absolute; left: 9%; right: 9%; top: 66%; bottom: 5%; z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.page-text .pt-head { font-family: var(--font-mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; }
+.page-text .pt-body { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: #1a1208; max-width: 94%; }
+.page-text.full { top: 8%; justify-content: center; }
+/* Editorial LEAD block — Georgia serif lead paragraph (vs the default typewriter body). */
+.page-text.lead .pt-body { font-family: var(--font-serif); font-size: 15px; line-height: 1.55; color: #1a1208; }
+/* FRAMED block — a contained, bordered block (cream box, dark ink = print-safe). */
+.page-text.framed { background: #f1ece0; border: 1px solid #cdc3aa; padding: 12px 16px; }
+
+/* Cards-container header / footer. */
+.cards-head { position: absolute; left: 8%; right: 8%; top: 3%; text-align: center; z-index: 12; }
+.cards-head .ch-kicker { font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #8a6a3a; }
+.cards-head .ch-sub { font-family: var(--font-mono); font-size: 9px; color: #2a2218; line-height: 1.4; margin-top: 3px; }
+.cards-foot { position: absolute; left: 8%; right: 8%; bottom: 2.5%; text-align: center; font-family: var(--font-mono); font-size: 8px; color: #2a2218; z-index: 12; }
+
+/* Dramatic DARK page (reveals / splashes) — light text on near-black. */
+.page.dark { background: #0a0b0e; }
+.page.dark .cards-head .ch-kicker, .page.dark .page-text .pt-head { color: #e3a73c; }
+.page.dark .cards-head .ch-sub, .page.dark .page-text .pt-body { color: #d7d2c6; }
+/* On dark pages, captions/labels KEEP their cream box (dark ink on light) — print-safe; no white-text knockout on cheap stock. */
+/* A big closing / reveal line (Bangers). */
+.page-text .pt-punch { font-family: var(--font-display); font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #f4efe4; margin-top: 10px; }
+
+/* Display prims — big text that is still an editable + movable primitive. */
+.prim.title { font-family: var(--font-display); font-size: 40px; letter-spacing: .04em; line-height: 1; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
+.prim.punch { font-family: var(--font-display); font-size: 27px; letter-spacing: .03em; line-height: 1.05; color: #1a1208; background: transparent; border: none; padding: 0; max-width: none; }
+/* Typewriter section header — the comic's Special Elite voice as a header (quieter than Bangers). */
+.prim.title.typewriter { font-family: var(--font-mono); font-size: 17px; letter-spacing: .14em; text-transform: uppercase; line-height: 1.35; color: #8a6a3a; }
+.page.dark .prim.title.typewriter { color: #e8d9b0; }
+/* Colour modifier for headers — the picked accent (e.g. page-12 orange title). */
+.prim.title.gold { color: var(--gold); }
+/* Inline highlight — a coloured run inside body text (e.g. a key figure), matching the gold accent. */
+.hl { color: var(--gold); font-weight: 700; }
+/* Smaller display sub-header — inherits Bangers from .prim.title. */
+.prim.title.sub { font-size: 22px; }
+.page.dark .prim.title { color: #e3a73c; }
+.page.dark .prim.punch { background: rgba(245,230,200,.96); border: 2px solid #8b7355; color: #1a1208; padding: 4px 16px; }
+
+/* PULL-QUOTE — 50s editorial: Georgia italic, gold left-rule, typewriter attribution.
+   Dark ink on the light page = print-safe. <b> inside = gold emphasis; .cite = source line. */
+.prim.quote { font-family: var(--font-serif); font-style: italic; font-size: 17px; line-height: 1.42; color: #1a1208; background: transparent; border: none; border-left: 3px solid var(--gold); padding: 3px 2px 3px 16px; }
+.prim.quote b, .prim.quote strong { color: var(--gold); font-style: normal; font-weight: 700; }
+.prim.quote .cite { display: block; font-family: var(--font-mono); font-style: normal; font-size: 9px; letter-spacing: .04em; color: #6b5a3e; margin-top: 12px; }
+/* Boxed variant — counterpoint / skeptic beats: tinted card, same rule. */
+.prim.quote.boxed { background: #f1ece0; border: 1px solid #cdc3aa; border-left: 3px solid var(--gold); padding: 14px 18px; }
+/* Typewriter voice — the comic's Special Elite face instead of editorial Georgia (reads less "corporate"). */
+.prim.quote.typewriter { font-family: var(--font-mono); font-style: normal; font-size: 13px; line-height: 1.5; }
+.prim.quote.typewriter b, .prim.quote.typewriter strong { font-style: normal; }
+/* On a dark page, invert to warm cream (use sparingly — light ink knocks out on cheap stock). */
+.page.dark .prim.quote { color: #f2ead0; }
+.page.dark .prim.quote .cite { color: #a89d7e; }
+.page.dark .prim.quote.boxed { background: #08111c; border-color: #1f2937; border-left-color: var(--gold); }
+
+/* STAT-TRIO — big figures with typewriter labels (shadow result, nuclear rates). */
+.stat-trio { display: flex; flex-wrap: wrap; gap: 26px; justify-content: center; align-items: flex-start; }
+.stat-trio .stat { text-align: center; }
+.stat-trio .stat .lbl { font-family: var(--font-mono); font-size: 8px; letter-spacing: .14em; text-transform: uppercase; color: #8a6a3a; }
+.stat-trio .stat .num { font-family: var(--font-serif); font-weight: 700; font-size: 33px; line-height: 1; color: #1a1208; margin-top: 5px; }
+.stat-trio .stat .num.gold { color: var(--gold); }
+
+/* EMBED — a framed container for live HTML/SVG (animations, diagrams). On screen/web it
+   plays; in print it shows whatever static state the markup defaults to (inline SVG prints
+   crisp as vector). Put an <svg>, .embed-inner block, or <iframe> inside .frame.embed. */
+.frame.embed { background: #0a1422; overflow: hidden; }
+.frame.embed > svg, .frame.embed > iframe, .frame.embed > .embed-inner { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+
+/* PRESS CLIPPING — a card tossed on the desk: tilt (--rot), drop shadow, brand left-accent (--accent). */
+.frame.card.clipping { background: #fcf9f3; box-shadow: 5px 8px 18px rgba(0,0,0,.45), 0 0 0 1px rgba(0,0,0,.12); transform: rotate(var(--rot, 0deg)); transform-origin: center; border-left: 5px solid var(--accent, var(--gold)); }
+.frame.card.clipping .card-body { padding: 8px 10px 10px; }
+.frame.card.clipping .prim.label { color: var(--accent, var(--gold)); }
+
+/* PRINT — exact page, no chrome, one page per sheet. */
+@page { size: 163mm 246mm; margin: 0; }
+@media print {
+  /* Force every background colour/image to print (Chrome strips them otherwise → dark pages + mats would go white). */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  html, body { background: #fff; padding: 0; display: block; }
+  .page { box-shadow: none; margin: 0; break-after: page; }
+  .page:last-child { break-after: auto; }   /* no trailing blank sheet */
+  .guides { display: none !important; }
+}

@@ -1,0 +1,103 @@
+/* comic.web.css — the PUBLISHED web view of a Comic Starter comic.
+   Loaded ONLY by the published page (working.html standalone / index.html); the editor never links it,
+   so its fixed-page layout is untouched. Desktop = the print pages as a continuous, tighter-gap scroll.
+   Mobile = principled reflow to one readable column (frames stack in reading order; captions drop below;
+   speech/thought stay on the art). Works off whatever the editor produced — no per-comic tweaking. */
+
+@media screen {
+  html, body { margin: 0; background: #0e0f12; }
+  .guides { display: none !important; }                 /* editor aids never show on the web */
+  body { display: flex; flex-direction: column; align-items: center; padding: 20px 0 48px; gap: 10px; }
+  .page { box-shadow: 0 12px 44px rgba(0,0,0,.55); margin: 0; flex: 0 0 auto; }
+  .m-notice { display: none; }                          /* mobile-only banner (shown in the reflow block) */
+}
+
+/* Desktop SINGLE-column: scale up for comfortable reading (only below the 2-up spread breakpoint). */
+@media screen and (min-width: 880px)  and (max-width: 1239px) { body { zoom: 1.25; } }
+@media screen and (min-width: 1080px) and (max-width: 1239px) { body { zoom: 1.5; } }
+
+/* Wide desktop: a proper 2-up COMIC SPREAD — cover alone, facing pages side-by-side, back cover alone
+   (like an open comic book). Middle pages pair up 2|3, 4|5, … in DOM/reading order. */
+@media screen and (min-width: 1240px) {
+  body { display: grid; grid-template-columns: repeat(2, auto); justify-content: center; align-content: start; gap: 24px 0; }
+  .m-cover, .m-back { grid-column: 1 / -1; justify-self: center; }   /* cover + back span the full spread, centred */
+}
+
+/* ============================ MOBILE REFLOW (≤ 700px) ============================ */
+@media screen and (max-width: 700px) {
+  body { padding: 0 0 36px; gap: 0; background: #111216; }
+
+  /* Mobile-only notice bar at the very top. */
+  .m-notice {
+    display: block; align-self: stretch; width: 100%; box-sizing: border-box;
+    background: #17100a; color: #e8d9b0; border-bottom: 1px solid #3a2c18;
+    font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; text-align: center; padding: 9px 12px;
+  }
+
+  /* The fixed print page becomes a full-width, auto-height column. */
+  .page {
+    width: 100% !important; max-width: 100% !important; height: auto !important; min-height: 0 !important;
+    overflow: visible !important; box-shadow: none !important; margin: 0 0 4px !important;
+    display: flex !important; flex-direction: column !important; gap: 0; background: #f6f4ef;
+  }
+  .page.dark { background: #0a0b0e; }
+
+  /* Every positioned child → a full-width block, in reading (DOM) order. (.m-overlay = cover furniture, stays put.) */
+  .page > .frame, .page > .prim:not(.m-overlay), .page > .page-text, .page > .cards-head,
+  .page > .cards-foot, .page > .chapter-title, .page > .stat-trio {
+    position: static !important; left: auto !important; right: auto !important;
+    top: auto !important; bottom: auto !important; transform: none !important;
+    width: 100% !important; max-width: 100% !important; height: auto !important; margin: 0 !important;
+  }
+
+  /* Frames: full-width, image at natural height (the whole image shows; print crop-zoom is dropped). */
+  .frame { display: block !important; }
+  .frame > img {
+    position: static !important; inset: auto !important;
+    width: 100% !important; height: auto !important; transform: none !important;
+  }
+
+  /* Side-by-side cards stack on a phone. */
+  .frame.card.horizontal { flex-direction: column !important; }
+  .frame.card.horizontal > img { width: 100% !important; height: auto !important; flex: 0 0 auto !important; }
+
+  /* Caption/quote overlaid on a frame → drop into flow as a bar under the image. */
+  .frame > .prim {
+    position: static !important; transform: none !important;
+    left: auto !important; right: auto !important; top: auto !important; bottom: auto !important;
+    width: auto !important; max-width: 100% !important; margin: 9px 14px 4px !important;
+  }
+  /* LABELS are compact location/section tags, not full-width bars (dark box + light text from comic.css). */
+  .frame > .prim.label, .page > .prim.label {
+    display: inline-block !important; width: auto !important; max-width: 92% !important;
+    align-self: flex-start !important; margin: 8px 14px 3px !important;
+  }
+
+  /* Speech & thought AUTOFLOW below their frame, exactly like captions — they fall through the
+     `.frame > .prim` / `.page > .prim` rules above (static, in flow). Overlay was unreliable once a
+     frame de-positions in the reflow (the bubble lost its anchor and floated across the page).
+     Keep the bubble styling; de-circle the thought (a full circle is huge in flow) + clamp the type. */
+  .prim.speech, .prim.thought { font-size: clamp(11px, 3vw, 13px) !important; line-height: 1.25 !important; }
+  .prim.thought { border-radius: 16px !important; padding: 10px 16px !important; }
+  /* Cover furniture (titles/credits over a full-bleed cover) stays overlaid in place, shrunk to its text. */
+  .m-overlay { position: absolute !important; width: auto !important; max-width: 60% !important; }
+  .m-overlay-r { left: auto !important; right: 4% !important; text-align: right !important; }
+  .m-overlay.title, .m-overlay.title.typewriter { font-size: clamp(9px, 2.8vw, 13px) !important; }
+
+  /* Fluid type so a phone reads comfortably. */
+  .page-text .pt-body { font-size: clamp(13px, 3.7vw, 16px) !important; line-height: 1.5 !important; }
+  .page-text .pt-head, .cards-head .ch-kicker, .cards-foot { font-size: clamp(10px, 3vw, 12px) !important; }
+  .prim.title { font-size: clamp(26px, 9vw, 46px) !important; }
+  .prim.title.sub, .prim.title.typewriter { font-size: clamp(15px, 4.6vw, 22px) !important; }
+  .prim.caption, .prim.label { font-size: clamp(12px, 3.4vw, 14px) !important; }
+  .prim.quote { font-size: clamp(14px, 4vw, 18px) !important; }
+  .prim.punch { font-size: clamp(20px, 7vw, 30px) !important; }
+  .chapter-title .ct-title { font-size: clamp(34px, 12vw, 62px) !important; line-height: .95 !important; }
+  .chapter-title .ct-number { font-size: clamp(15px, 4.4vw, 22px) !important; }
+  .chapter-title .ct-eyebrow { font-size: clamp(13px, 4vw, 18px) !important; }
+  /* nothing should overflow the column */
+  .page * { overflow-wrap: break-word; }
+  /* content sitting UNDER a full-bleed frame on the print page (flagged by comic.web.js) stays hidden on mobile */
+  .m-covered { display: none !important; }
+}

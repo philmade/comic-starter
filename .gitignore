@@ -11,3 +11,6 @@ MIGRATION_PLAN.md
 # Archive directory keeps prior image versions locally; don't ship the contents
 images/_archive/*
 !images/_archive/.gitkeep
+
+# Cloudflare Wrangler cache (deploy tooling, not source)
+.wrangler/

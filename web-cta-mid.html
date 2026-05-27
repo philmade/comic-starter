@@ -1,0 +1,32 @@
+<!-- web-cta-mid.html — slim mid-comic CTA, injected by publish.js right after the EXHIBIT A / Plate XE325
+     reveal (the placement that converted on the original site). Source-tagged client_reference_id=mid so
+     sales from here are attributable in Stripe, vs the end CTA (=end). Web-only. -->
+<section class="webcta-mid">
+  <style>
+    .webcta-mid { background:#15110b; border-top:1px solid rgba(200,118,30,.32); border-bottom:1px solid rgba(200,118,30,.32); padding:22px 20px; }
+    .webcta-mid .inner { max-width:680px; margin:0 auto; display:flex; gap:20px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .webcta-mid .txt { text-align:left; flex:1 1 270px; }
+    .webcta-mid .kick { font-family:var(--font-mono),monospace; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--gold,#c8761e); margin-bottom:5px; }
+    .webcta-mid .line { font-family:var(--font-serif),Georgia,serif; font-size:15px; color:#e8d9b0; line-height:1.4; }
+    .webcta-mid .acts { display:flex; gap:10px; align-items:center; flex:0 0 auto; }
+    .webcta-mid .buy { display:inline-block; padding:12px 20px; background:var(--gold,#c8761e); color:#140d04; text-decoration:none; font-family:var(--font-mono),monospace; font-size:13px; letter-spacing:.06em; font-weight:700; border-radius:5px; white-space:nowrap; }
+    .webcta-mid .buy:hover { filter:brightness(1.08); }
+    .webcta-mid .kofi { display:inline-flex; align-items:center; gap:7px; padding:11px 15px; background:transparent; border:1px solid var(--gold,#c8761e); color:var(--gold,#c8761e); text-decoration:none; font-family:var(--font-mono),monospace; font-size:13px; font-weight:700; border-radius:5px; white-space:nowrap; }
+    .webcta-mid .kofi:hover { background:rgba(200,118,30,.12); }
+    @media (max-width:560px) {
+      .webcta-mid .inner { flex-direction:column; text-align:center; }
+      .webcta-mid .txt { text-align:center; }
+      .webcta-mid .acts { width:100%; justify-content:center; }
+    }
+  </style>
+  <div class="inner">
+    <div class="txt">
+      <div class="kick">The first edition — in print</div>
+      <div class="line">Signed &amp; numbered. Just <strong>150 copies</strong> — when they're gone, they're gone.</div>
+    </div>
+    <div class="acts">
+      <a class="buy" href="https://buy.stripe.com/aFa9ATddIgzj2NTgUl93y01?client_reference_id=mid" target="_blank" rel="noopener">Pre-order · £20 →</a>
+      <a class="kofi" href="https://ko-fi.com/phillyharper" target="_blank" rel="noopener">☕ Ko-fi</a>
+    </div>
+  </div>
+</section>

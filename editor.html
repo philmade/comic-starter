@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Comic editor</title>
+<!-- The design system: pages render here EXACTLY as they do in working.html / print. -->
+<link rel="stylesheet" href="comic.css">
+<style>
+  /* ===== EDITOR CHROME ONLY — a thin metadata layer over the working doc.
+     None of this is ever written back to working.html (stripped on save). ===== */
+  body { margin: 0; padding: 0; display: block; background: #2b2b30; color: #e8e8ea; font-family: 'Inter', sans-serif; }
+
+  .toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center; padding: 8px 14px; background: #17171b; border-bottom: 1px solid #000; font-size: 12px; }
+  .toolbar strong { color: #ffd24a; }
+  .toolbar .grp { display: flex; gap: 6px; align-items: center; padding-right: 8px; border-right: 1px solid #333; }
+  .toolbar button { font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 5px; border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer; }
+  .toolbar button:hover { background: #32323a; }
+  .toolbar button:disabled { opacity: .4; cursor: default; }
+
+  .palette { position: fixed; left: 12px; top: 92px; z-index: 900; display: flex; flex-direction: column; gap: 4px;
+    padding: 8px; width: 138px; font-size: 11px; background: #17171b; border: 1px solid #000; border-radius: 8px;
+    max-height: calc(100vh - 108px); overflow-y: auto; }
+  .palette .grp-lbl { color: #9aa0ad; font-size: 8.5px; letter-spacing: .12em; text-transform: uppercase; margin: 7px 2px 1px; border-top: 1px solid #2a2a30; padding-top: 6px; }
+  .palette .ph { color: #ffd24a; font-weight: 700; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin: 2px 2px 3px; }
+  .palette button { width: 100%; text-align: left; padding: 6px 8px; font: inherit; font-size: 11px; border-radius: 5px; border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer; }
+  .palette button:hover { background: #32323a; }
+  .palette .sep { height: 1px; background: #333; margin: 3px 0; }
+  .palette .hint { color: #777; font-size: 9px; line-height: 1.3; margin-top: 4px; }
+
+  #status { position: fixed; bottom: 16px; right: 18px; z-index: 1200; color: #7ed957; background: rgba(23,23,27,.92);
+    border: 1px solid #2d4a2d; padding: 6px 12px; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity .25s; }
+  #status:not(:empty) { opacity: 1; }
+
+  /* The document stage: pages stacked + scrollable, dark gutter. */
+  #doc { min-height: 100vh; padding: 88px 24px 48px; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+
+  /* Editor-only metadata over each page. */
+  .page-badge { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .12em; color: #8a8f99; user-select: none; }
+  .frame, .prim { cursor: move; }
+  .frame:hover, .prim:hover { outline: 1px dashed rgba(10,132,255,.55); outline-offset: -1px; }
+  .frame.selected, .prim.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  .frame.is-parent { outline: 2px dashed #ffd24a; outline-offset: 2px; }   /* parent frame of the selected prim */
+  .frame.card .prim { cursor: default; }   /* card text isn't free-positioned */
+  /* While dragging/resizing: hide handles + bounding box (keep snap guidelines) so the element's own edge is clear. */
+  body.dragging .moveable-control,
+  body.dragging .moveable-line.moveable-direction { opacity: 0 !important; }
+  body.dragging .frame.selected, body.dragging .prim.selected, body.dragging .frame.is-parent { outline: none !important; }
+  body.dragging .page { overflow: visible; }                  /* let a dragged element cross page boundaries */
+  body.dragging .frame.selected, body.dragging .prim.selected { z-index: 500; }   /* float above other pages while moving */
+  [contenteditable="true"] { outline: 2px solid #ffd24a !important; cursor: text; }
+  /* Crop / reframe mode: clear cursor + a dashed cue on the frame being reframed. */
+  body.cropmode { cursor: move; }
+  body.cropmode .frame.cropping-now { outline: 2px dashed #7ed957 !important; outline-offset: 2px; }
+
+  @media print { .toolbar, .palette, #status, .page-badge { display: none !important; } #doc { padding: 0; gap: 0; display: block; } }
+</style>
+<script src="vendor/moveable.min.js"></script>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="grp"><strong>comic editor</strong> · working.html</span>
+  <span class="grp"><button id="save">Save → disk</button><button id="undo">↶ Undo</button><button id="redo">↷ Redo</button></span>
+  <span class="grp"><button id="guides">Guides</button><button id="reload">Reload from disk</button><button id="print">Print / PDF</button><button id="catalog">Primitives ▸</button></span>
+  <span class="grp"><button id="addpage">+ Page</button><button id="addchapter">+ Chapter</button><button id="delpage" style="border-color:#6b2b2b; color:#ffb4b4;">⌫ Page</button></span>
+  <span class="grp" id="fontpick" style="font-size:11px; gap:4px;">Fonts</span>
+  <span class="grp" id="tip">drag to move (across pages too) · top knob or [ ] to rotate · double-click text to edit · select+component recasts</span>
+</div>
+
+<div class="palette" id="palette">
+  <div class="ph">Component library</div>
+  <div id="seltype" style="font-size:11px; color:#7ed957; font-weight:600; margin:1px 2px 5px;">— nothing selected —</div>
+  <div class="grp-lbl">Headers</div>
+  <button data-cast="title">◆ Header (display)</button>
+  <button data-cast="titletype">⌨ Header (typewriter)</button>
+  <button data-cast="titlegold">◆ Header (gold)</button>
+  <button data-cast="titlesub">◆ Sub-header</button>
+  <button data-cast="punch">★ Punch line</button>
+  <div class="grp-lbl">Text</div>
+  <button data-cast="textblock">▤ Text block</button>
+  <button data-cast="textblock-lead">▤ Lead block</button>
+  <button data-cast="textblock-framed">▤ Framed block</button>
+  <button data-cast="caption">¶ Caption</button>
+  <button data-cast="label">▮ Label</button>
+  <button data-cast="quote">❞ Quote</button>
+  <button data-cast="quotebox">❞ Quote (boxed)</button>
+  <button data-cast="speech">❝ Speech</button>
+  <button data-cast="thought">❛ Thought</button>
+  <div class="grp-lbl">Cards &amp; frames</div>
+  <button data-cast="panel">▭ Panel</button>
+  <button data-cast="card">▢ Card</button>
+  <button data-cast="horizontal">◫ Side-by-side</button>
+  <button data-cast="polaroid">▣ Polaroid</button>
+  <button data-cast="clipping">✄ Clipping</button>
+  <button data-cast="matted">⊡ Matted</button>
+  <button data-action="image">🖼 Set / replace image…</button>
+  <button data-action="stroke">▣ Comic stroke (white+black)</button>
+  <button data-action="crop">⛶ Crop / reframe image</button>
+  <input type="file" id="imgpick" accept="image/*" style="display:none">
+  <div class="sep"></div>
+  <button data-action="delete" style="border-color:#6b2b2b; color:#ffb4b4;">⌫ Delete selected</button>
+  <div class="hint">Nothing selected → a component CREATES a new one on the page you're viewing. Something selected → it recasts. Drag any element across pages to move it. Double-click text to edit.</div>
+</div>
+
+<div id="status"></div>
+<div id="doc"><div style="color:#cdd6e8; padding:80px">Loading working.html…</div></div>
+
+<script>
+(() => {
+  const doc = document.getElementById('doc');
+  const POS = ['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right','middle-center','below-frame'];
+  const TEXTTYPES = { caption:['caption'], label:['label'], quote:['quote'], quotebox:['quote','boxed'], speech:['speech'], thought:['thought'], title:['title'], titletype:['title','typewriter'], titlegold:['title','gold'], titlesub:['title','sub'], punch:['punch'] };
+  const FRAMETYPES = { panel:[], card:['card'], horizontal:['card','horizontal'], polaroid:['card','polaroid'], clipping:['card','clipping'], matted:['matted'] };
+  let tmpl = null;        // parsed working.html (preserves <head> + constraints comment)
+  let mv = null, selected = null;
+  let history = [], hIdx = -1;
+  let saveTimer = null, ready = false;   // autosave debounce + load guard
+  let dirty = new Set(), structural = false;   // diff save: which .page elements changed; structural = page added/removed/renumbered
+  let fontVars = {};                            // global font-role overrides (role -> css value), persisted in working.html head
+
+  const toast = m => { const s = document.getElementById('status'); if (!s) return; s.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => s.textContent = '', 1600); };
+
+  // ── Load / reload ──────────────────────────────────────────────────────────
+  async function load() {
+    ready = false;                             // don't autosave the freshly-loaded content
+    dirty.clear(); structural = false;         // fresh load — nothing pending
+    const text = await (await fetch('working.html', { cache: 'no-store' })).text();
+    tmpl = new DOMParser().parseFromString(text, 'text/html');
+    doc.innerHTML = tmpl.body.innerHTML;       // inject the pages
+    loadFontVars();                            // apply any saved global font overrides + sync the picker
+    decorate();
+    history = []; hIdx = -1; pushHistory();
+    setupMoveable();
+    ready = true;
+  }
+
+  // Editor-only badges above each page (kept out of #doc's .page elements).
+  function decorate() {
+    [...doc.querySelectorAll(':scope > .page')].forEach((pg, i) => {
+      const prev = pg.previousElementSibling;
+      if (prev && prev.classList.contains('page-badge')) { prev.textContent = 'PAGE ' + (i + 1); return; }
+      const b = document.createElement('div'); b.className = 'page-badge'; b.textContent = 'PAGE ' + (i + 1);
+      doc.insertBefore(b, pg);
+    });
+  }
+
+  // ── History (snapshots of the cleaned pages) ────────────────────────────────
+  function pageSnapshot() {
+    return [...doc.querySelectorAll(':scope > .page')].map(p => cleanClone(p).outerHTML).join('\n\n');
+  }
+  function pushHistory() {
+    const snap = pageSnapshot();
+    history = history.slice(0, hIdx + 1); history.push(snap);
+    if (history.length > 100) history.shift();
+    hIdx = history.length - 1; updateButtons();
+    if (ready) scheduleSave();                 // autosave on every change
+  }
+  function applyHistory() {
+    selected = null; if (mv) mv.target = null;
+    [...doc.querySelectorAll(':scope > .page, :scope > .page-badge')].forEach(n => n.remove());
+    const frag = document.createRange().createContextualFragment(history[hIdx]);
+    doc.insertBefore(frag, doc.firstChild);
+    decorate(); updateButtons();
+  }
+  const undo = () => { if (hIdx > 0) { hIdx--; applyHistory(); } };
+  const redo = () => { if (hIdx < history.length - 1) { hIdx++; applyHistory(); } };
+  function updateButtons() {
+    document.getElementById('undo').disabled = hIdx <= 0;
+    document.getElementById('redo').disabled = hIdx >= history.length - 1;
+  }
+
+  // ── Save → working.html on disk ─────────────────────────────────────────────
+  function cleanClone(node) {
+    const c = node.cloneNode(true);
+    c.querySelectorAll('.page-badge, .moveable-control-box, .moveable-area, .moveable-line, .moveable-control').forEach(n => n.remove());
+    c.classList && c.classList.remove('selected', 'is-parent');
+    c.querySelectorAll('.selected, .is-parent').forEach(n => n.classList.remove('selected', 'is-parent'));
+    c.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
+    return c;
+  }
+  function serialize() {
+    const pages = [...doc.querySelectorAll(':scope > .page')].map(p => cleanClone(p).outerHTML).join('\n\n');
+    tmpl.body.innerHTML = '\n\n' + pages + '\n\n';
+    return '<!DOCTYPE html>\n' + tmpl.documentElement.outerHTML + '\n';
+  }
+  function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }   // debounced autosave
+  async function save() {
+    clearTimeout(saveTimer); saveTimer = null;
+    try {
+      if (structural) {                              // page added/removed/renumbered → whole-file save
+        const r = await fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html: serialize() }) });
+        structural = false; dirty.clear();
+        toast((await r.json()).ok ? 'saved ✓' : 'save failed'); return;
+      }
+      const pages = [...dirty].filter(p => p.isConnected); dirty.clear();
+      if (!pages.length) return;
+      for (const pg of pages) {                      // diff save: patch ONLY the pages that changed
+        await fetch('/patch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', page: Number(pg.getAttribute('data-page')), html: cleanClone(pg).outerHTML }) });
+      }
+      toast('saved ✓ · ' + pages.length + ' pg');
+    } catch (e) { toast('save failed: ' + e.message); }
+  }
+
+  // ── Moveable: drag / resize, committed to inline % ──────────────────────────
+  function commitToPercent(el) {
+    const ref = el.offsetParent; if (!ref) return;     // frame -> its .page ; prim -> its .frame
+    const rw = ref.clientWidth, rh = ref.clientHeight;
+    // Read LAYOUT geometry (px, independent of CSS units and of transform/rotate).
+    // A move leaves width/height in %, so never parse the inline string as px.
+    el.style.left   = (el.offsetLeft   / rw * 100).toFixed(2) + '%';
+    el.style.top    = (el.offsetTop    / rh * 100).toFixed(2) + '%';
+    el.style.width  = (el.offsetWidth  / rw * 100).toFixed(2) + '%';
+    if (el.classList.contains('caption') || el.classList.contains('label')) el.style.height = '';   // text boxes hug their text (no dead space)
+    else el.style.height = (el.offsetHeight / rh * 100).toFixed(2) + '%';
+    if (el.classList.contains('prim')) el.style.maxWidth = 'none';   // let the dragged width take effect
+  }
+  // Cross-page move: if dropped over a different page, transfer the element into it and
+  // re-express its position as % of that page (ratios of post-zoom rects = zoom-independent).
+  function maybeReparent(el) {
+    const cur = el.closest('.page'); if (!cur) return false;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const tgt = [...doc.querySelectorAll(':scope > .page')].find(p => {
+      const pr = p.getBoundingClientRect();
+      return cx >= pr.left && cx <= pr.right && cy >= pr.top && cy <= pr.bottom;
+    });
+    if (!tgt || tgt === cur) return false;
+    const pr = tgt.getBoundingClientRect();
+    tgt.appendChild(el);
+    el.style.left = ((r.left - pr.left) / pr.width * 100).toFixed(2) + '%';
+    el.style.top  = ((r.top  - pr.top)  / pr.height * 100).toFixed(2) + '%';
+    el.style.width = (r.width / pr.width * 100).toFixed(2) + '%';
+    if (el.classList.contains('caption') || el.classList.contains('label')) el.style.height = '';
+    else el.style.height = (r.height / pr.height * 100).toFixed(2) + '%';
+    if (el.classList.contains('prim')) el.style.maxWidth = 'none';
+    toast('moved to page ' + ([...doc.querySelectorAll(':scope > .page')].indexOf(tgt) + 1));
+    return true;
+  }
+  function setupMoveable() {
+    if (mv) return;
+    mv = new Moveable(doc, { draggable: true, resizable: true, rotatable: true, throttleRotate: 1, origin: false, keepRatio: false,
+      snappable: true, snapThreshold: 5,
+      snapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true },
+      elementSnapDirections: { left: true, top: true, right: true, bottom: true, center: true, middle: true } });
+    const px = (el, p, v) => el.style[p] = v + 'px';
+    mv.on('dragStart', () => document.body.classList.add('dragging'));
+    mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
+    mv.on('resizeStart', () => document.body.classList.add('dragging'));
+    mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
+    mv.on('dragEnd', e => { document.body.classList.remove('dragging'); if (!e.isDrag) return; if (maybeReparent(e.target)) selectFrame(e.target); else commitToPercent(e.target); pushHistory(); });
+    mv.on('resizeEnd', e => { document.body.classList.remove('dragging'); if (e.lastEvent) { commitToPercent(e.target); pushHistory(); } });
+    // Rotate — position stays in left/top; write ONLY the rotation (strip any translate Moveable adds) so it can't shift the element.
+    mv.on('rotateStart', () => document.body.classList.add('dragging'));
+    mv.on('rotate', e => { const m = /rotate[zZ]?\([^)]+\)/.exec(e.transform); e.target.style.transform = m ? m[0] : e.transform; });
+    mv.on('rotateEnd', e => { document.body.classList.remove('dragging'); if (e.lastEvent) pushHistory(); });
+    // Group (multi-select): Moveable transforms all targets together.
+    mv.on('dragGroupStart', () => document.body.classList.add('dragging'));
+    mv.on('dragGroup', e => e.events.forEach(ev => { px(ev.target, 'left', ev.left); px(ev.target, 'top', ev.top); }));
+    mv.on('dragGroupEnd', e => { document.body.classList.remove('dragging'); e.events.forEach(ev => commitToPercent(ev.target)); pushHistory(); });
+    mv.on('resizeGroupStart', () => document.body.classList.add('dragging'));
+    mv.on('resizeGroup', e => e.events.forEach(ev => { px(ev.target, 'width', ev.width); px(ev.target, 'height', ev.height); px(ev.target, 'left', ev.drag.left); px(ev.target, 'top', ev.drag.top); }));
+    mv.on('resizeGroupEnd', e => { document.body.classList.remove('dragging'); e.events.forEach(ev => commitToPercent(ev.target)); pushHistory(); });
+    mv.on('rotateGroupStart', () => document.body.classList.add('dragging'));
+    mv.on('rotateGroup', e => e.events.forEach(ev => { ev.target.style.transform = ev.drag.transform; }));   // group rotate orbits the group centre (keeps Moveable's translate)
+    mv.on('rotateGroupEnd', e => { document.body.classList.remove('dragging'); pushHistory(); });
+    doc.addEventListener('mousedown', e => {
+      if (mv.isMoveableElement(e.target)) return;
+      if (e.target.isContentEditable) return;
+      const prim = e.target.closest('.prim');                 // caption/label/quote/speech/thought/title/punch
+      let target = prim && !prim.closest('.frame.card') ? prim : e.target.closest('.frame');
+      if (!target) target = e.target.closest('.cards-head, .cards-foot, .page-text, .chapter-title, .stat-trio');  // page-level blocks selectable too
+      if (e.shiftKey || e.metaKey) toggleSelection(target);   // add/remove from a multi-selection (across panels)
+      else selectFrame(target);
+    });
+  }
+  let selection = [];                                          // current selection (1 = single, >1 = group)
+  function setSelection(els) {
+    selection = (els || []).filter(Boolean);
+    [...doc.querySelectorAll('.selected, .is-parent')].forEach(n => n.classList.remove('selected', 'is-parent'));
+    selection.forEach(el => {
+      if (el.classList.contains('prim')) {
+        normalizePrim(el);
+        const frame = el.closest('.frame'); if (frame) frame.classList.add('is-parent');   // colour-code its parent
+      }
+      el.classList.add('selected');
+    });
+    selected = selection[selection.length - 1] || null;        // primary (for cast / text edit)
+    mv.target = selection.length > 1 ? selection : (selection[0] || null);
+    const page = selected && selected.closest('.page');        // snap to this page's guides + every other element
+    mv.elementGuidelines = page ? [...page.querySelectorAll('.g-bleed, .g-trim, .g-quiet, .g-safe, .g-inner, .frame, .prim')].filter(n => !selection.includes(n)) : [];
+    if (mv.selfElement && !mv.selfElement.parentElement) doc.appendChild(mv.selfElement);
+    mv.updateRect();
+    const st = document.getElementById('seltype');             // show what's selected
+    if (st) st.textContent = selection.length > 1 ? (selection.length + ' selected') : (selected ? '◆ ' + primType(selected) : '— nothing selected —');
+  }
+  function primType(el) {                                       // human label for any selected element
+    if (!el) return '';
+    if (el.classList.contains('frame')) {
+      if (el.classList.contains('embed')) return 'embed';
+      if (el.classList.contains('card')) return el.classList.contains('polaroid') ? 'polaroid card'
+        : el.classList.contains('clipping') ? 'clipping card'
+        : el.classList.contains('horizontal') ? 'side-by-side card' : 'card';
+      return el.classList.contains('matted') ? 'matted frame' : 'panel (frame)';
+    }
+    if (el.classList.contains('prim')) {
+      if (el.classList.contains('quote')) return el.classList.contains('boxed') ? 'boxed quote' : 'quote';
+      return ['title', 'punch', 'label', 'caption', 'speech', 'thought'].find(t => el.classList.contains(t)) || 'text';
+    }
+    if (el.classList.contains('cards-head')) return 'cards header';
+    if (el.classList.contains('cards-foot')) return 'cards footer';
+    if (el.classList.contains('page-text')) return 'page-text block';
+    if (el.classList.contains('chapter-title')) return 'chapter splash';
+    if (el.classList.contains('stat-trio')) return 'stat row';
+    return 'element';
+  }
+  function selectFrame(el) { setSelection(el ? [el] : []); }   // single select (selectFrame(null) clears)
+  function toggleSelection(el) {
+    if (!el) return;
+    setSelection(selection.includes(el) ? selection.filter(n => n !== el) : [...selection, el]);
+  }
+  // A prim positioned by class (.top-left…) -> explicit inline % at its current spot,
+  // so Moveable can move/resize it cleanly (class transforms removed).
+  function normalizePrim(prim) {
+    const frame = prim.offsetParent; if (!frame) return;
+    if (prim.style.left && !POS.some(c => prim.classList.contains(c))) return;   // already inline
+    const fr = frame.getBoundingClientRect(), pr = prim.getBoundingClientRect();
+    prim.style.left = ((pr.left - fr.left) / fr.width * 100).toFixed(2) + '%';
+    prim.style.top  = ((pr.top - fr.top) / fr.height * 100).toFixed(2) + '%';
+    prim.style.maxWidth = 'none';
+    POS.forEach(c => prim.classList.remove(c));
+  }
+
+  // ── Cast (the palette) — change a frame's primitive in place ────────────────
+  function wrapCardBody(el) {
+    if (el.querySelector(':scope > .card-body')) return;
+    const body = document.createElement('div'); body.className = 'card-body';
+    [...el.querySelectorAll(':scope > .prim')].forEach(p => body.appendChild(p));
+    el.appendChild(body);
+  }
+  function unwrapCardBody(el) {
+    const body = el.querySelector(':scope > .card-body'); if (!body) return;
+    [...body.children].forEach(c => el.appendChild(c)); body.remove();
+  }
+  function primToFrame(prim, asCard) {                          // turn a text prim into a card/panel frame at its spot
+    const t = ['label', 'caption', 'speech', 'thought'].find(c => prim.classList.contains(c)) || 'caption';
+    const frame = document.createElement('div');
+    frame.className = asCard ? 'frame card' : 'frame';
+    frame.style.left = prim.style.left || '6%';
+    frame.style.top = prim.style.top || '6%';
+    frame.style.width = prim.style.width || '46%';
+    const inner = document.createElement('div');
+    inner.className = 'prim ' + t + (asCard ? '' : ' top-left');
+    inner.textContent = prim.textContent;
+    if (asCard) { const body = document.createElement('div'); body.className = 'card-body'; body.appendChild(inner); frame.appendChild(body); }
+    else frame.appendChild(inner);
+    prim.parentElement.replaceChild(frame, prim);
+    return frame;
+  }
+  function setPrimType(p, classes) {
+    const keep = [...p.classList].filter(c => POS.includes(c) || c === 'selected');   // keep position + selection
+    p.className = ['prim', ...classes, ...keep].join(' ');
+  }
+  function currentPage() {                                     // the page under the viewport's vertical centre
+    const cy = window.innerHeight / 2;
+    const pages = [...doc.querySelectorAll(':scope > .page')];
+    return pages.find(p => { const r = p.getBoundingClientRect(); return r.top <= cy && r.bottom >= cy; }) || pages[0];
+  }
+  function insertNew(type) {                                   // CREATE a fresh component on the current page
+    const page = currentPage(); if (!page) { toast('scroll to a page first'); return; }
+    let el;
+    if (type.startsWith('textblock')) {                        // a page-text block (typewriter heading + body, or a variant)
+      el = document.createElement('div');
+      el.className = type === 'textblock-lead' ? 'page-text lead' : type === 'textblock-framed' ? 'page-text framed' : 'page-text';
+      el.style.cssText = 'left:12%; top:14%; width:76%; right:auto; bottom:auto;';
+      el.innerHTML = type === 'textblock-lead'                 // lead = body only; others get a heading + body
+        ? '<div class="pt-body">Body text — double-click to edit.</div>'
+        : '<div class="pt-head">HEADING</div><div class="pt-body">Body text — double-click to edit.</div>';
+      page.appendChild(el); pushHistory(); selectFrame(el); toast('added text block'); return;
+    }
+    if (TEXTTYPES[type]) {
+      el = document.createElement('div');
+      el.className = ['prim', ...TEXTTYPES[type]].join(' ');
+      el.style.cssText = 'left:10%; top:10%; width:50%; max-width:none;';
+      if (type === 'quote' || type === 'quotebox') el.innerHTML = 'New quote — double-click to edit.<span class="cite">— source</span>';
+      else el.textContent = 'New ' + type;
+    } else if (FRAMETYPES[type]) {
+      el = document.createElement('div');
+      el.className = ['frame', ...FRAMETYPES[type]].join(' ');
+      el.style.cssText = 'left:10%; top:10%; width:46%; height:30%;';
+      el.innerHTML = FRAMETYPES[type].includes('card')
+        ? '<div class="card-body"><div class="prim label">New card</div><div class="prim caption">Caption — double-click to edit.</div></div>'
+        : '<div class="prim caption top-left">Caption — double-click to edit.</div>';
+    } else { toast('pick a component'); return; }
+    page.appendChild(el);
+    pushHistory(); selectFrame(el); toast('added ' + type);
+  }
+  function primToBlock(prim) {                                 // convert a text prim into a .page-text block
+    const blk = document.createElement('div'); blk.className = 'page-text';
+    blk.style.cssText = 'left:' + (prim.style.left || '12%') + '; top:' + (prim.style.top || '14%') + '; width:' + (prim.style.width || '76%') + '; right:auto; bottom:auto;';
+    blk.innerHTML = '<div class="pt-body">' + prim.textContent.trim() + '</div>';
+    prim.parentElement.replaceChild(blk, prim);
+    return blk;
+  }
+  function castSelected(type) {
+    if (!selected) { insertNew(type); return; }                // nothing selected → CREATE a new component
+    if (type === 'textblock') {                                // convert a selected text prim → page-text block
+      if (selected.classList.contains('prim')) { const b = primToBlock(selected); pushHistory(); selectFrame(b); toast('→ text block'); return; }
+      toast('select text to convert'); return;
+    }
+    const el = selected;
+    if (el.classList.contains('prim')) {                       // a text primitive is selected
+      if (TEXTTYPES[type]) { setPrimType(el, TEXTTYPES[type]); }              // recast its text type in place
+      else if (FRAMETYPES[type]) {                             // wrap the text into a frame / card variant
+        const fr = primToFrame(el, FRAMETYPES[type].includes('card'));
+        if (FRAMETYPES[type].length) fr.className = 'frame ' + FRAMETYPES[type].join(' ');
+        pushHistory(); selectFrame(fr); toast('cast → ' + type); return;
+      }
+    } else if (el.classList.contains('frame')) {               // a frame is selected
+      if (FRAMETYPES[type]) {                                   // switch its frame / card variant
+        el.classList.remove('card', 'horizontal', 'polaroid', 'clipping', 'matted');
+        const cls = FRAMETYPES[type];
+        if (cls.includes('card')) { el.classList.add(...cls); wrapCardBody(el); }
+        else if (cls.includes('matted')) { el.classList.add('matted'); unwrapCardBody(el); }
+        else { unwrapCardBody(el); }                           // panel
+      } else if (TEXTTYPES[type]) {                            // add a new text prim inside it
+        const host = el.querySelector(':scope > .card-body') || el;
+        const d = document.createElement('div');
+        d.className = ['prim', ...TEXTTYPES[type], el.classList.contains('card') ? '' : 'top-left'].filter(Boolean).join(' ');
+        d.textContent = 'New ' + type;
+        host.appendChild(d);
+        pushHistory(); selectFrame(d); toast('added ' + type); return;
+      }
+    } else { toast('select a frame or text to recast'); return; }   // page-level block
+    pushHistory(); setSelection(selection.slice()); toast('cast → ' + type);   // refresh the chip + Moveable for the new type
+  }
+  function deleteSelected() {
+    if (!selection.length) { toast('nothing selected'); return; }
+    const els = selection.slice();
+    selectFrame(null);                                         // clear selection + parent highlight + Moveable
+    els.forEach(el => el.remove());
+    pushHistory(); toast('deleted ' + (els.length > 1 ? els.length : ''));
+  }
+  // Upload an image → save to images/ → set it on the selected frame (or drop a new panel holding it).
+  async function addImage(file) {
+    if (!file) return;
+    try {
+      toast('uploading…');
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(file); });
+      const r = await fetch('/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name, dataB64: b64 }) });
+      const res = await r.json();
+      if (!res.ok) { toast('upload failed'); return; }
+      let frame = selected && selected.classList.contains('frame') ? selected : null;
+      if (!frame) {                                            // nothing suitable selected → new panel on the page in view
+        const page = currentPage(); if (!page) { toast('scroll to a page first'); return; }
+        frame = document.createElement('div'); frame.className = 'frame';
+        frame.style.cssText = 'left:8%; top:8%; width:64%; height:38%;';
+        page.appendChild(frame);
+      }
+      let img = frame.querySelector(':scope > img');
+      if (!img) { img = document.createElement('img'); frame.insertBefore(img, frame.firstChild); }
+      img.src = res.path; img.removeAttribute('alt');
+      pushHistory(); selectFrame(frame); toast('image set');
+    } catch (e) { toast('upload failed: ' + e.message); }
+  }
+
+  // ── Inline text editing (double-click) ──────────────────────────────────────
+  // Any text LEAF inside a page is editable — no allow-list, so nothing on a
+  // page can be un-editable. (Containers with child elements are skipped.)
+  doc.addEventListener('dblclick', e => {
+    // Edit the nearest text primitive / text leaf — inline <b>/<em> inside it is fine (edit the whole thing).
+    let t = e.target.closest('.prim, .pt-head, .pt-body, .ch-kicker, .ch-sub, .ct-eyebrow, .ct-number, .ct-title, .cards-foot');
+    if (!t && mv && mv.isMoveableElement(e.target) && selected)   // dblclick landed on the Moveable overlay → edit the selection
+      t = selected.matches('.prim') ? selected : (selected.querySelector('.pt-body, .pt-head, .prim') || selected);
+    if (!t) { const el = e.target; if (el.closest('.page') && !el.querySelector('*') && el.textContent.trim()) t = el; }
+    if (!t || !t.textContent.trim()) return;
+    selectFrame(null);                                            // drop the Moveable box so its overlay can't block the caret
+    t.contentEditable = 'true'; t.focus();
+    t.addEventListener('blur', () => { t.removeAttribute('contenteditable'); pushHistory(); }, { once: true });
+  });
+
+  // Paste as plain text — drop pasted content into the target primitive's OWN style, not the
+  // copied source's fonts/colour. (contenteditable's default carries the source's inline formatting.)
+  doc.addEventListener('paste', e => {
+    const el = document.activeElement;
+    if (!el || !el.isContentEditable) return;
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+
+  // ── Wiring ──────────────────────────────────────────────────────────────────
+  // ── Page operations: add / delete whole pages (data-page renumbered by order) ──
+  const GUIDES = '<div class="guides"><div class="g-bleed"></div><div class="g-quiet"></div><div class="g-trim"></div><div class="g-safe"></div><div class="g-inner"></div></div>';
+  function renumberPages() { [...doc.querySelectorAll(':scope > .page')].forEach((p, i) => p.setAttribute('data-page', i + 1)); }
+  function addPage(inner, dark) {
+    const sec = document.createElement('section'); sec.className = 'page' + (dark ? ' dark' : ''); sec.innerHTML = inner + GUIDES;
+    const cur = currentPage(); if (cur) cur.after(sec); else doc.appendChild(sec);
+    renumberPages(); decorate(); pushHistory(); sec.scrollIntoView({ block: 'center' }); return sec;
+  }
+  function deletePage() {
+    const pages = [...doc.querySelectorAll(':scope > .page')];
+    if (pages.length <= 1) { toast('can’t delete the only page'); return; }
+    const pg = currentPage(); if (!pg) return;
+    const n = pages.indexOf(pg) + 1;
+    if (!confirm('Delete page ' + n + ' and everything on it?')) return;
+    const badge = pg.previousElementSibling; if (badge && badge.classList.contains('page-badge')) badge.remove();
+    selectFrame(null); pg.remove(); renumberPages(); decorate(); pushHistory(); toast('deleted page ' + n);
+  }
+  document.getElementById('addpage').onclick = () => { addPage(''); toast('blank page added'); };
+  document.getElementById('addchapter').onclick = () => { addPage('<div class="chapter-title"><div class="ct-eyebrow">Eyebrow line</div><div class="ct-number">Chapter N</div><div class="ct-title">Chapter Title</div></div>', true); toast('chapter splash added'); };
+  document.getElementById('delpage').onclick = deletePage;
+  document.getElementById('save').onclick = save;
+  document.getElementById('undo').onclick = undo;
+  document.getElementById('redo').onclick = redo;
+  document.getElementById('reload').onclick = () => { if (confirm('Reload from disk and discard unsaved edits?')) load(); };
+  document.getElementById('guides').onclick = () => document.querySelectorAll('.guides').forEach(g => g.style.display = g.style.display === 'none' ? '' : 'none');
+  document.getElementById('print').onclick = () => window.print();
+  document.getElementById('catalog').onclick = () => window.open('catalog.html', '_blank');
+  document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
+  document.querySelector('#palette [data-action="delete"]').onclick = deleteSelected;
+  document.querySelector('#palette [data-action="image"]').onclick = () => document.getElementById('imgpick').click();
+  document.getElementById('imgpick').onchange = e => { addImage(e.target.files[0]); e.target.value = ''; };
+  document.querySelector('#palette [data-action="stroke"]').onclick = () => {
+    if (!selected || !selected.classList.contains('frame')) { toast('select a frame first'); return; }
+    selected.classList.toggle('stroked'); pushHistory(); setSelection(selection.slice());
+    toast(selected.classList.contains('stroked') ? 'comic stroke on' : 'stroke off');
+  };
+  // ── Crop / reframe: pan (drag) + zoom (scroll) the image inside an overflow-clipped frame. ──
+  // No Moveable reconfig — keeps normal drag/resize untouched. object-position = pan, transform:scale = zoom; both inline so the crop persists in print/web.
+  let cropping = null, panFrom = null;
+  function enterCrop(frame) {
+    const img = frame && frame.querySelector(':scope > img');
+    if (!img) { toast('select a frame with an image first'); return; }
+    selectFrame(null);                                           // hide the Moveable box
+    cropping = { frame, img };
+    if (!img.style.objectFit) img.style.objectFit = 'cover';
+    if (!img.style.objectPosition) img.style.objectPosition = '50% 50%';
+    if (!img.dataset.zoom) img.dataset.zoom = (img.style.transform.match(/scale\(([\d.]+)\)/) || [, '1'])[1];
+    frame.classList.add('cropped', 'cropping-now');
+    document.body.classList.add('cropmode');
+    toast('Crop: drag to pan · scroll to zoom · Esc / click out to finish');
+  }
+  function exitCrop() {
+    if (!cropping) return;
+    cropping.frame.classList.remove('cropping-now');
+    if (cropping.img.dataset.zoom === '1' && cropping.img.style.objectPosition === '50% 50%')
+      cropping.frame.classList.remove('cropped');                // nothing actually reframed → don't leave a clip on
+    cropping = null; panFrom = null;
+    document.body.classList.remove('cropmode');
+    pushHistory();
+  }
+  function applyZoom(img, z) {
+    z = Math.max(1, Math.min(5, z)); img.dataset.zoom = z.toFixed(3);
+    img.style.transformOrigin = img.style.objectPosition || '50% 50%';
+    img.style.transform = z > 1.002 ? 'scale(' + z.toFixed(3) + ')' : '';
+  }
+  document.querySelector('#palette [data-action="crop"]').onclick = () => {
+    if (cropping) { exitCrop(); toast('crop saved'); return; }
+    const f = selected && selected.closest('.frame');
+    if (!f) { toast('select a frame with an image first'); return; }
+    enterCrop(f);
+  };
+  doc.addEventListener('mousedown', e => {                       // capture: runs before the normal selection handler
+    if (!cropping) return;
+    if (e.target.closest('.frame') === cropping.frame) {         // grab to pan
+      const op = (cropping.img.style.objectPosition || '50% 50%').split(/\s+/).map(parseFloat);
+      panFrom = { x: e.clientX, y: e.clientY, ox: op[0] || 50, oy: op[1] || 50 };
+      e.preventDefault(); e.stopPropagation();
+    } else { exitCrop(); }                                       // click away → commit, then let the normal handler select
+  }, true);
+  window.addEventListener('mousemove', e => {
+    if (!cropping || !panFrom) return;
+    const r = cropping.frame.getBoundingClientRect(), z = parseFloat(cropping.img.dataset.zoom) || 1;
+    const nx = Math.max(0, Math.min(100, panFrom.ox - (e.clientX - panFrom.x) / r.width  * 140 / z));
+    const ny = Math.max(0, Math.min(100, panFrom.oy - (e.clientY - panFrom.y) / r.height * 140 / z));
+    cropping.img.style.objectPosition = nx.toFixed(1) + '% ' + ny.toFixed(1) + '%';
+    cropping.img.style.transformOrigin = cropping.img.style.objectPosition;
+  });
+  window.addEventListener('mouseup', () => { panFrom = null; });
+  // ── Zoom: Cmd/Ctrl + wheel (toolbar/palette stay fixed; pages scale + scroll). Cmd/Ctrl+0 resets. ──
+  let zoom = 1;
+  function setZoom(z) { zoom = Math.min(4, Math.max(0.3, z)); doc.style.zoom = zoom; toast(Math.round(zoom * 100) + '%'); if (mv) mv.updateRect(); }
+  window.addEventListener('wheel', e => {
+    if (cropping && e.target.closest('.frame') === cropping.frame) {   // crop mode: wheel zooms the image
+      e.preventDefault();
+      applyZoom(cropping.img, (parseFloat(cropping.img.dataset.zoom) || 1) * (e.deltaY < 0 ? 1.08 : 0.926));
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey)) return;                     // plain wheel still scrolls normally
+    e.preventDefault(); e.stopPropagation();                   // Cmd/Ctrl + wheel = zoom, never scroll
+    const old = zoom;
+    setZoom(zoom * (e.deltaY < 0 ? 1.12 : 0.893));
+    const r = zoom / old;                                      // keep the point under the cursor fixed (no jump)
+    window.scrollTo((window.scrollX + e.clientX) * r - e.clientX, (window.scrollY + e.clientY) * r - e.clientY);
+  }, { passive: false });
+
+  // ── Arrow-key nudge of the selection (1px; Shift = 10px). Uses layout px, so it's exact at any zoom. ──
+  function nudge(dx, dy) {
+    if (!selection.length) return;
+    selection.forEach(el => {                                  // nudge the whole selection
+      const ref = el.offsetParent; if (!ref) return;
+      el.style.left = ((el.offsetLeft + dx) / ref.clientWidth * 100).toFixed(2) + '%';
+      el.style.top  = ((el.offsetTop  + dy) / ref.clientHeight * 100).toFixed(2) + '%';
+    });
+    if (mv) mv.updateRect();
+    document.body.classList.add('dragging');                 // hide handles while nudging; restore ~0.45s after the last keypress
+    clearTimeout(nudge._t); nudge._t = setTimeout(() => { document.body.classList.remove('dragging'); if (mv) mv.updateRect(); }, 450);
+    pushHistory();
+  }
+
+  // ── Rotation: current angle (reads inline rotate() or the computed matrix — so it works for --rot polaroids too). ──
+  function currentRot(el) {
+    const inline = /rotate\(([-\d.]+)deg\)/.exec(el.style.transform);
+    if (inline) return parseFloat(inline[1]);
+    const m = getComputedStyle(el).transform;                  // matrix(a,b,c,d,e,f) → angle from a,b
+    if (m && m.indexOf('matrix') === 0) { const v = m.match(/-?[\d.]+/g); return Math.round(Math.atan2(+v[1], +v[0]) * 180 / Math.PI); }
+    return 0;
+  }
+  function rotateBy(d) {                                        // [ / ] = ±1°, Shift = ±15°
+    if (!selection.length) return;
+    selection.forEach(el => {
+      if (el.matches('.frame.card .prim')) return;             // card text is locked flat (transform:none)
+      el.style.transform = 'rotate(' + (currentRot(el) + d) + 'deg)';
+    });
+    if (mv) mv.updateRect();
+    document.body.classList.add('dragging');
+    clearTimeout(rotateBy._t); rotateBy._t = setTimeout(() => { document.body.classList.remove('dragging'); if (mv) mv.updateRect(); }, 450);
+    pushHistory();
+  }
+
+  window.addEventListener('keydown', e => {
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    else if (mod && e.key === '0') { e.preventDefault(); setZoom(1); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { e.preventDefault(); deleteSelected(); }
+    else if (e.key === 'Escape') { if (cropping) { exitCrop(); toast('crop saved'); } else selectFrame(null); }
+    else if (selection.length && (e.key === '[' || e.key === ']')) { e.preventDefault(); rotateBy((e.key === '[' ? -1 : 1) * (e.shiftKey ? 15 : 1)); }
+    else if (selected && e.key.indexOf('Arrow') === 0) {
+      e.preventDefault();
+      const s = e.shiftKey ? 10 : 1;
+      nudge(e.key === 'ArrowLeft' ? -s : e.key === 'ArrowRight' ? s : 0,
+            e.key === 'ArrowUp' ? -s : e.key === 'ArrowDown' ? s : 0);
+    }
+  });
+
+  // Flush a pending autosave on refresh/close so nothing in the debounce window is lost.
+  window.addEventListener('beforeunload', () => {
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    if (structural) { fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', html: serialize() }), keepalive: true }); return; }
+    [...dirty].filter(p => p.isConnected).forEach(pg => fetch('/patch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: 'working.html', page: Number(pg.getAttribute('data-page')), html: cleanClone(pg).outerHTML }), keepalive: true }));
+  });
+
+  // Autosave on ANY change to the document — catches moves/resizes (even drags
+  // that don't end cleanly), text edits, casts, deletes. Debounced via scheduleSave.
+  new MutationObserver(muts => {
+    if (!ready) return;
+    for (const m of muts) {
+      const adds = [...m.addedNodes, ...m.removedNodes];
+      if (m.target === doc || adds.some(n => n.nodeType === 1 && n.classList && n.classList.contains('page'))) { structural = true; continue; }
+      const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      const pg = el && el.closest('.page'); if (pg) dirty.add(pg);   // mark just this page dirty
+    }
+    scheduleSave();
+  }).observe(doc, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'], characterData: true });
+
+  // ── Global fonts: swap each design role (display / typewriter / serif / body) for the whole comic. ──
+  // Overrides persist as a <style id="font-vars"> in working.html's <head>; live preview via documentElement. All choices are pre-loaded by comic.css's @import.
+  const FONTS = {
+    display: { label: 'Display', def: "'Bangers', cursive",
+      opts: [['Bangers', "'Bangers', cursive"], ['Anton', "'Anton', sans-serif"], ['Bebas Neue', "'Bebas Neue', sans-serif"], ['Archivo Black', "'Archivo Black', sans-serif"], ['Luckiest Guy', "'Luckiest Guy', cursive"]] },
+    mono: { label: 'Typewriter', def: "'Special Elite', monospace",
+      opts: [['Special Elite', "'Special Elite', monospace"], ['Courier Prime', "'Courier Prime', monospace"], ['JetBrains Mono', "'JetBrains Mono', monospace"]] },
+    serif: { label: 'Serif', def: "Georgia, 'Times New Roman', serif",
+      opts: [['Georgia', "Georgia, 'Times New Roman', serif"], ['Lora', "'Lora', Georgia, serif"], ['Playfair Display', "'Playfair Display', Georgia, serif"], ['Merriweather', "'Merriweather', Georgia, serif"]] },
+    body: { label: 'Body', def: "'Inter', sans-serif",
+      opts: [['Inter', "'Inter', sans-serif"], ['Roboto', "'Roboto', sans-serif"], ['System', "system-ui, sans-serif"]] },
+  };
+  function buildFontPicker() {
+    const host = document.getElementById('fontpick'); if (!host) return;
+    for (const [role, cfg] of Object.entries(FONTS)) {
+      const sel = document.createElement('select');
+      sel.dataset.role = role; sel.dataset.def = cfg.def; sel.title = cfg.label + ' font (whole comic)';
+      sel.style.cssText = 'font-size:11px; background:#1f1f24; color:#e8e8ea; border:1px solid #44454d; border-radius:5px; padding:2px 4px;';
+      cfg.opts.forEach(([name, val]) => { const o = document.createElement('option'); o.value = val; o.textContent = cfg.label + ': ' + name; sel.appendChild(o); });
+      sel.onchange = () => setFontVar(role, sel.value);
+      host.appendChild(sel);
+    }
+  }
+  function applyFontVars() {
+    Object.keys(FONTS).forEach(r => document.documentElement.style.setProperty('--font-' + r, fontVars[r] || FONTS[r].def));
+    if (!tmpl) return;                                  // also mirror into the saved head
+    let st = tmpl.getElementById('font-vars');
+    const keys = Object.keys(fontVars);
+    if (!keys.length) { if (st) st.remove(); return; }
+    if (!st) { st = tmpl.createElement('style'); st.id = 'font-vars'; tmpl.head.appendChild(st); }
+    st.textContent = ':root{' + keys.map(r => '--font-' + r + ':' + fontVars[r] + ';').join('') + '}';
+  }
+  function setFontVar(role, value) {
+    if (value === FONTS[role].def) delete fontVars[role]; else fontVars[role] = value;
+    applyFontVars();
+    structural = true; scheduleSave();                  // a head change → whole-file save
+    toast('font · ' + FONTS[role].label);
+  }
+  function loadFontVars() {
+    fontVars = {};
+    const st = tmpl && tmpl.getElementById('font-vars');
+    if (st) { const re = /--font-(display|mono|serif|body)\s*:\s*([^;]+);/g; let m; while ((m = re.exec(st.textContent))) fontVars[m[1]] = m[2].trim(); }
+    applyFontVars();
+    document.querySelectorAll('#fontpick select[data-role]').forEach(sel => { sel.value = fontVars[sel.dataset.role] || sel.dataset.def; });
+  }
+  buildFontPicker();
+
+  load();
+})();
+</script>
+</body>
+</html>

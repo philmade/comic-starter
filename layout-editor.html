@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>comic-starter — print layout editor</title>
+<!--
+  PRINT LAYOUT EDITOR (page-native fine-layout pass).
+
+  Generic framework tool — authored in comic-starter, vendored into each comic.
+  It imports the comic's OWN ./comic.html (the master) relative to where it's
+  served, so the same file works for any comic. Non-destructive: it only reads
+  the master and writes a layout overlay (localStorage + exported JSON); it
+  never modifies comic.html or the images.
+
+  Model (confirmed):
+    · web comic = master; layout = thin overlay (references shared images/)
+    · import walks .comic's children -> frame-groups (image + its primitives,
+      positions from each primitive's class), in story order
+    · AUTO-FLOW: 3 frames per page (rows in the trim area). Landscape images
+      fill the trim width (cover-crop) so they reach the guide edge by default;
+      square/portrait stay aspect-correct and centred. Drag/resize SNAPS to the
+      bleed/trim/safe/centre guides. Frame + its primitives are one nested DOM
+      group -> they move as one. Cover = its own full page.
+    · Phase 1 (broad): drag/resize whole frames, page through. [this build]
+    · Phase 2 (fine): drag individual primitives, bubble tails. [next]
+
+  Mixam UK Standard Paperback Comic: trim 157x240mm, bleed 3mm (163x246 canvas),
+  quiet/safe 5mm.
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Special+Elite&family=Inter:wght@400;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; }
+  :root { --bleed: 3mm; --quiet: 5mm; --page-w: 163mm; --page-h: 246mm; }
+  html, body { margin: 0; background: #2b2b30; font-family: 'Inter', sans-serif; color: #e8e8ea; }
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center; padding: 8px 14px; background: #17171b; border-bottom: 1px solid #000; font-size: 12px;
+  }
+  .toolbar .grp { display: flex; gap: 6px; align-items: center; padding-right: 8px; border-right: 1px solid #333; }
+  .toolbar strong { color: #ffd24a; }
+  button { font: inherit; font-size: 12px; padding: 5px 9px; border-radius: 5px; border: 1px solid #444; background: #26262c; color: #e8e8ea; cursor: pointer; }
+  button:hover { background: #32323a; }
+  button:disabled { opacity: .4; cursor: default; }
+  .pageno { min-width: 70px; text-align: center; }
+  /* Out of toolbar flow: a fading toast bottom-right, never shifts layout */
+  #status {
+    position: fixed; bottom: 16px; right: 18px; z-index: 200;
+    color: #7ed957; background: rgba(23,23,27,.92); border: 1px solid #2d4a2d;
+    padding: 6px 12px; border-radius: 6px; pointer-events: none;
+    opacity: 0; transition: opacity .25s ease;
+  }
+  #status:not(:empty) { opacity: 1; }
+
+  /* Left primitive palette — select a frame, click a chip to cast it. */
+  .palette {
+    position: fixed; left: 12px; top: 92px; z-index: 150;
+    display: flex; flex-direction: column; gap: 5px;
+    padding: 8px; width: 120px; font-size: 11px;
+    background: #17171b; border: 1px solid #000; border-radius: 8px;
+  }
+  .palette .ph { color: #ffd24a; font-weight: 700; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; margin: 2px 2px 3px; }
+  .palette button { width: 100%; text-align: left; padding: 6px 8px; }
+  .palette .sep { height: 1px; background: #333; margin: 3px 0; }
+
+  .stage-wrap { padding: 24px; display: flex; justify-content: center; }
+  .page { position: relative; width: var(--page-w); height: var(--page-h); background: #f6f4ef; box-shadow: 0 6px 30px rgba(0,0,0,.45); overflow: hidden; }
+
+  /* Guides (screen only), Mixam template colours, kept subtle */
+  .guides { position: absolute; inset: 0; pointer-events: none; z-index: 60; }
+  .g-bleed { position: absolute; inset: 0;                                border: var(--bleed) solid rgba(64,158,158,.14); }
+  .g-quiet { position: absolute; inset: var(--bleed);                      border: var(--quiet) solid rgba(232,168,58,.16); }
+  .g-trim  { position: absolute; inset: var(--bleed);                      border: 1px dashed rgba(0,0,0,.40); }
+  .g-safe  { position: absolute; inset: calc(var(--bleed) + var(--quiet)); border: 1px dashed rgba(224,49,49,.50); }
+  body.no-guides .guides { display: none; }
+
+  /* A frame-group: image + its primitives, dragged/resized as one */
+  .frame { position: absolute; z-index: 10; overflow: hidden; touch-action: none; cursor: move; background: #20222b; }
+  .frame.selected { outline: 2px solid #0a84ff; outline-offset: -1px; }
+  .frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+
+  /* Card cell: image on top, text stacked below (no caption boxes) */
+  .frame.card { background: #f6f4ef; overflow: hidden; display: flex; flex-direction: column; }
+  .frame.card > img { position: static; inset: auto; width: 100%; height: auto; max-height: 56%; object-fit: cover; flex: 0 0 auto; }
+  .frame.card.horizontal { flex-direction: row; align-items: stretch; }
+  .frame.card.horizontal > img { width: 42%; height: 100%; max-height: none; flex: 0 0 42%; }
+  .frame.card .card-body { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .frame.card.horizontal .card-body { flex: 1; justify-content: center; padding-left: 8px; }
+  .frame.card .prim { position: static !important; transform: none !important; max-width: none; margin: 2px 7px 0; padding: 0; background: transparent; border: none; box-shadow: none; border-radius: 0; }
+  .frame.card .prim.label { font-family: 'Bangers', cursive; color: #1a1208; font-size: 13px; margin-top: 5px; letter-spacing: .01em; }
+  .frame.card .prim.caption { font-family: 'Special Elite', monospace; color: #2a2218; font-size: 8px; line-height: 1.4; }
+
+  /* Polaroid variant — white mat, tilt, drop shadow. Assign per-frame:
+     f.variant='polaroid', f.rot=<deg>. A reusable look any comic can use. */
+  .frame.card.polaroid { background: #fff; padding: 5% 5% 0; box-shadow: 0 8px 22px rgba(0,0,0,.32); transform: rotate(var(--rot, 0deg)); transform-origin: center; overflow: visible; }
+  .frame.card.polaroid > img { max-height: 80%; }
+  .frame.card.polaroid .card-body { padding: 7px 0 10px; align-items: center; }
+  .frame.card.polaroid .prim.label { font-family: 'Special Elite', monospace; font-size: 10px; color: #2a2118; letter-spacing: .03em; text-align: center; margin-top: 7px; }
+
+  .handle { display: none; position: absolute; width: 13px; height: 13px; background: #0a84ff; border: 2px solid #fff; border-radius: 50%; z-index: 30; }
+  .frame.selected .handle { display: block; }
+  .handle.nw { left: -7px;  top: -7px;    cursor: nwse-resize; }
+  .handle.ne { right: -7px; top: -7px;    cursor: nesw-resize; }
+  .handle.sw { left: -7px;  bottom: -7px; cursor: nesw-resize; }
+  .handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+  body.no-guides .handle { display: none !important; }
+
+  /* Primitives positioned within their frame by their class (phase-2 makes them draggable) */
+  .prim { position: absolute; z-index: 12; max-width: 78%; pointer-events: none; }
+  .prim.caption, .prim.label { background: rgba(245,230,200,.96); color: #2a2218; border: 2px solid #8b7355; padding: 7px 10px; font-family: 'Special Elite', monospace; font-size: 9.5px; line-height: 1.4; }
+  .prim.label { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 8.5px; }
+  .prim.speech { background: #fff; color: #111; border: 2px solid #111; border-radius: 16px; padding: 7px 11px; font-family: 'Bangers', cursive; font-size: 13px; line-height: 1.2; box-shadow: 2px 3px 0 rgba(0,0,0,.3); }
+  .prim.thought { background: #fff; color: #111; border: 2.5px solid #111; border-radius: 60% 45% 55% 50%; padding: 10px 14px; font-family: 'Bangers', cursive; font-size: 12px; font-style: italic; }
+  .prim.top-left { top: 5%; left: 5%; } .prim.top-center { top: 5%; left: 50%; transform: translateX(-50%); } .prim.top-right { top: 5%; right: 5%; }
+  .prim.bottom-left { bottom: 5%; left: 5%; } .prim.bottom-center { bottom: 5%; left: 50%; transform: translateX(-50%); } .prim.bottom-right { bottom: 5%; right: 5%; }
+  .prim.middle-center { top: 50%; left: 50%; transform: translate(-50%,-50%); } .prim.below-frame { bottom: 4%; left: 5%; }
+
+  /* Chapter title page: centred, on the light sheet */
+  .chapter-title { position: absolute; inset: 12% 9%; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+  .chapter-title div { font-family: 'Bangers', cursive; color: #1a1a1a; letter-spacing: .02em; line-height: 1.05; font-size: 30px; }
+  .chapter-title div:first-child { font-family: 'Special Elite', monospace; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #8b7355; }
+
+  /* Page beat: on-page text block rendered below the image */
+  .page-text { position: absolute; left: 9%; right: 9%; top: 66%; bottom: 5%; z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+  .page-text .pt-head { font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8a6a3a; }
+  .page-text .pt-body { font-family: 'Special Elite', monospace; font-size: 12px; line-height: 1.5; color: #1a1208; max-width: 94%; }
+  .page-text.full { top: 8%; justify-content: center; }   /* text-only page: use the whole page */
+
+  /* Cards-container header / footer */
+  .cards-head { position: absolute; left: 8%; right: 8%; top: 3%; text-align: center; z-index: 12; }
+  .cards-head .ch-kicker { font-family: 'Special Elite', monospace; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #8a6a3a; }
+  .cards-head .ch-sub { font-family: 'Special Elite', monospace; font-size: 9px; color: #2a2218; line-height: 1.4; margin-top: 3px; }
+  .cards-foot { position: absolute; left: 8%; right: 8%; bottom: 2.5%; text-align: center; font-family: 'Special Elite', monospace; font-size: 8px; color: #2a2218; z-index: 12; }
+
+  .loading { color: #cdd6e8; text-align: center; padding: 80px; font-size: 14px; }
+
+  @page { size: 163mm 246mm; margin: 0; }
+  @media screen { .page:not(.current) { display: none; } }
+  @media print {
+    html, body { background: #fff; }
+    .toolbar { display: none !important; }
+    .stage-wrap { padding: 0; display: block; }
+    .page { display: block !important; margin: 0; box-shadow: none; break-after: page; }
+    .guides, .handle { display: none !important; }
+    .frame.selected { outline: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="grp"><strong>comic-starter</strong> layout editor</span>
+  <span class="grp">
+    <button id="prev">◀</button><span class="pageno" id="pageno">–</span><button id="next">▶</button>
+    <button id="addpage">+ Page</button><button id="delpage">⌫ empty</button>
+  </span>
+  <span class="grp">Selected frame → <button id="toprev">↤ prev page</button><button id="tonext">next page ↦</button></span>
+  <span class="grp">Cards: <button data-cols="1">1-col</button><button data-cols="2">2-col</button><button data-cols="3">3-col</button> · <button data-dir="v">⬍ stacked</button><button data-dir="h">⬌ side-by-side</button></span>
+  <span class="grp">
+    <button id="undo">↶ Undo</button><button id="redo">↷ Redo</button>
+    <button id="reimport">Re-import from comic.html</button>
+    <button id="guides">Guides</button>
+    <button id="export">Export layout</button>
+    <button id="import">Import layout</button>
+    <button id="print">Print / PDF</button>
+  </span>
+  <span id="status"></span>
+</div>
+
+<div class="palette" id="palette">
+  <div class="ph">Cast to</div>
+  <button data-cast="page">◳ Page</button>
+  <button data-cast="panel">▭ Panel</button>
+  <button data-cast="card">▢ Card</button>
+  <div class="sep"></div>
+  <button data-cast="caption">¶ Caption</button>
+  <button data-cast="label">▮ Label</button>
+  <button data-cast="speech">❝ Speech</button>
+  <button data-cast="thought">❛ Thought</button>
+</div>
+<div class="stage-wrap" id="stage"><div class="loading">Loading…</div></div>
+<input type="file" id="import-file" accept="application/json" hidden>
+<script src="vendor/moveable.min.js"></script>
+<script src="vendor/selecto.min.js"></script>
+
+<script>
+  const STORE = 'comic-starter:layout:' + location.pathname;
+  const SOURCE = 'comic.html';
+  const PRIM_SEL = '.caption, .speech, .thought, .editable-caption, .editable-label';
+  const POS = ['top-left','top-center','top-right','bottom-left','bottom-center','bottom-right','middle-center','below-frame'];
+
+  let layout = null, current = 0, selected = null, drag = null, mv, selecto;
+
+  // ── Import: master comic.html → frame-groups → auto-flowed pages ──────────
+  function preloadAR(srcs) {
+    return Promise.all(srcs.map(src => new Promise(res => {
+      if (!src) return res([src, null]);
+      const im = new Image();
+      im.onload = () => res([src, im.naturalWidth ? im.naturalWidth / im.naturalHeight : null]);
+      im.onerror = () => res([src, null]);
+      im.src = src;
+    }))).then(pairs => Object.fromEntries(pairs));
+  }
+
+  async function importFromMaster() {
+    const html = await fetch(SOURCE, { cache: 'no-store' }).then(r => r.text());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const comic = doc.querySelector('.comic');
+    if (!comic) throw new Error('No .comic found in ' + SOURCE);
+
+    const typeOf = el => el.classList.contains('speech') ? 'speech'
+                       : el.classList.contains('thought') ? 'thought'
+                       : el.classList.contains('editable-label') ? 'label' : 'caption';
+    const posOf = el => POS.find(p => el.classList.contains(p)) || 'bottom-left';
+
+    let auto = 0; const beats = [];
+    Array.from(comic.children).forEach(child => {
+      if ((child.getAttribute('style') || '').replace(/\s/g,'').includes('display:none')) return;
+      if (child.getAttribute('data-layout') === 'skip') return;    // web-only beats (asks/CTAs) excluded from print
+      const isChapter = child.classList.contains('chapter-break') || child.getAttribute('data-layout') === 'chapter';
+      const img = child.querySelector('img');
+      // Top-level primitives only — a .speech/.thought bubble already contains its
+      // .speaker/.attribution; don't capture those nested prims again (double-import).
+      const prims = Array.from(child.querySelectorAll(PRIM_SEL)).filter(el => !el.parentElement.closest(PRIM_SEL));
+      if (!isChapter && !img && prims.length === 0) return;        // skip spacers — but never a chapter title
+      const src = img ? img.getAttribute('src') : (child.getAttribute('data-print-img') || null);  // video/JS beats can declare a print still
+      // Cover = the beat whose alt says "cover" or the frame explicitly id'd "cover".
+      // (Do NOT match "intro" in the filename — that wrongly grabs character intro
+      // images like beatrize_intro.webp and promotes them to full pages.)
+      const isCover = (/\bcover\b/i.test((img && img.alt) || '')) || child.getAttribute('data-frame-id') === 'cover';
+      const dl = child.getAttribute('data-layout');
+      const role = isChapter ? 'chapter' : dl === 'cards' ? 'cards' : dl === 'card' ? 'card' : (dl === 'page' || isCover) ? 'page' : 'panel';
+      const fid = child.getAttribute('data-frame-id') || (isCover ? 'cover' : 'auto.' + String(auto++).padStart(2, '0'));
+      const beat = {
+        fid, src, isCover, role,
+        prims: prims.map(p => ({ type: typeOf(p), pos: posOf(p), text: (p.textContent || '').replace(/\s+/g, ' ').trim() }))
+      };
+      if (isChapter) beat.lines = Array.from(child.children).map(c => (c.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      if (role === 'card') beat.cols = +child.getAttribute('data-card-cols') || 2;
+      if (role === 'cards') {                                       // card-grid container: expand its child items into cards
+        beat.cols = +child.getAttribute('data-card-cols') || 2;
+        let container = child, best = 0;                            // the densest child container is the grid
+        child.querySelectorAll('*').forEach(el => { const n = [...el.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).length; if (n > best) { best = n; container = el; } });
+        beat.items = [...container.children].filter(c => c.querySelector('img') || (c.textContent || '').trim().length > 3).map(item => {
+          const im = item.querySelector('img');
+          const lines = Array.from(item.querySelectorAll('div,p,h1,h2,h3,h4,blockquote'))
+            .filter(el => !el.querySelector('div,p,h1,h2,h3,h4,blockquote,img') && (el.textContent || '').trim().length > 1)
+            .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim());
+          return { src: im ? im.getAttribute('src') : null, lines: lines.slice(0, 4) };
+        });
+        const cl = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
+        const outside = Array.from(child.querySelectorAll('div,p,h1,h2,h3,h4,blockquote'))
+          .filter(el => !container.contains(el) && el !== container && !el.querySelector('div,p,h1,h2,h3,h4,blockquote,img') && cl(el).length > 1);
+        beat.header = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING).map(cl);
+        beat.footer = outside.filter(el => container.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).map(cl);
+        while (beat.items.length > 1 && !beat.items[0].src && beat.items.some(it => it.src)) beat.header = (beat.header || []).concat(beat.items.shift().lines);  // leading text intro -> header
+      }
+      if (role === 'page' && !isCover) {                            // page beats: capture on-page text (plain divs the prim selector misses)
+        beat.pageText = Array.from(child.querySelectorAll('div, p, h1, h2, h3, blockquote'))
+          .filter(el => !el.matches(PRIM_SEL) && !el.querySelector('div, p, h1, h2, h3, blockquote, img'))
+          .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      }
+      beats.push(beat);
+    });
+
+    // Real aspect ratios (parsed doc images aren't laid out, so preload them).
+    const ar = await preloadAR([...new Set(beats.map(b => b.src).filter(Boolean))]);
+
+    // Role-aware auto-flow:
+    //   panel   -> tiles 3-up in the trim area (landscape fills width; square/
+    //              portrait stay aspect-correct, centred)
+    //   page    -> owns its page (cover fills it; others fit aspect-correct, centred)
+    //   chapter -> its own title page AND a boundary: panels restart fresh after it
+    const PW = 163, PH = 246, BLEED = 3;
+    const trimX = BLEED / PW * 100, trimY = BLEED / PH * 100;
+    const trimW = (PW - 2 * BLEED) / PW * 100, trimH = (PH - 2 * BLEED) / PH * 100;
+    const ROWS = 3, GUT = 1.4;
+    const rowH = trimH / ROWS;
+
+    const place = (b, r) => {
+      const a = ar[b.src];
+      let h = rowH - GUT, w, x;
+      if (a && a >= 1.2) { w = trimW; x = trimX; }                 // landscape → fill to the trim edge
+      else { w = a ? (h / 100 * PH * a) / PW * 100 : trimW; if (w > trimW) { w = trimW; h = ((w / 100 * PW) / (a || 1)) / PH * 100; } x = 50 - w / 2; }
+      return { fid: b.fid, src: b.src, ar: a, prims: b.prims, x: +x.toFixed(2), y: +(trimY + r * rowH + (rowH - h) / 2).toFixed(2), w: +w.toFixed(2), h: +h.toFixed(2) };
+    };
+    const pageFrame = (b) => {                                     // a page-role beat owns its page
+      if (b.isCover) return { fid: b.fid, src: b.src, ar: ar[b.src], x: 0, y: 0, w: 100, h: 100, prims: b.prims };
+      const hasText = b.pageText && b.pageText.length;
+      const maxH = hasText ? trimH * 0.64 : trimH;                 // leave the lower third for the text block
+      const a = ar[b.src]; let w, h;
+      if (a) { h = maxH; w = (h / 100 * PH * a) / PW * 100; if (w > trimW) { w = trimW; h = ((w / 100 * PW) / a) / PH * 100; } }
+      else { w = trimW; h = maxH; }
+      const y = hasText ? trimY : (100 - h) / 2;                   // top-align when text sits below; else centre
+      return { fid: b.fid, src: b.src, ar: a, prims: b.prims, x: +(50 - w / 2).toFixed(2), y: +y.toFixed(2), w: +w.toFixed(2), h: +h.toFixed(2) };
+    };
+
+    // CARD: a compact unit packed into a grid run (up to ~6/page; cols = variant).
+    const CARD_GUT = 2.4;
+    const cardFrame = (b, idx, cols, rows) => {
+      const cellW = trimW / cols, cellH = trimH / rows, col = idx % cols, r = Math.floor(idx / cols);
+      return {
+        fid: b.fid, src: b.src, ar: ar[b.src], prims: b.prims, lines: b.lines, card: true,
+        x: +(trimX + col * cellW + CARD_GUT / 2).toFixed(2),
+        y: +(trimY + r * cellH + CARD_GUT / 2).toFixed(2),
+        w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2)
+      };
+    };
+    // A cards-container beat -> its own page(s): optional header at top, the card
+    // grid in the middle, optional footer caption at the bottom.
+    const cardsBeatPages = (b) => {
+      const cols = b.cols || 2, perPage = cols * Math.max(1, Math.floor(6 / cols)), out = [];
+      for (let i = 0; i < b.items.length; i += perPage) {
+        const group = b.items.slice(i, i + perPage), rows = Math.ceil(group.length / cols);
+        const hasH = i === 0 && b.header && b.header.length, hasF = (i + perPage >= b.items.length) && b.footer && b.footer.length;
+        const top = trimY + (hasH ? 14 : 0), bottom = trimY + trimH - (hasF ? 9 : 0);
+        const cellW = trimW / cols, cellH = (bottom - top) / rows;
+        const frames = group.map((it, idx) => {
+          const c = idx % cols, r = Math.floor(idx / cols);
+          return { fid: b.fid, src: it.src, ar: ar[it.src], lines: it.lines, card: true,
+            x: +(trimX + c * cellW + CARD_GUT / 2).toFixed(2), y: +(top + r * cellH + CARD_GUT / 2).toFixed(2),
+            w: +(cellW - CARD_GUT).toFixed(2), h: +(cellH - CARD_GUT).toFixed(2) };
+        });
+        out.push({ frames, cardsHeader: hasH ? b.header : null, cardsFooter: hasF ? b.footer : null });
+      }
+      return out;
+    };
+
+    const pages = [];
+    let row = [], cardRun = [];
+    const flushPanels = () => { if (row.length) { pages.push({ frames: row.map((b, i) => place(b, i)) }); row = []; } };
+    const flushCards = () => {
+      if (!cardRun.length) return;
+      const cols = cardRun[0].cols || 2;
+      const perPage = cols * Math.max(1, Math.floor(6 / cols));     // ~6 cards/page cap
+      for (let i = 0; i < cardRun.length; i += perPage) {
+        const group = cardRun.slice(i, i + perPage), rows = Math.ceil(group.length / cols);
+        pages.push({ frames: group.map((b, idx) => cardFrame(b, idx, cols, rows)) });
+      }
+      cardRun = [];
+    };
+    const flush = () => { flushPanels(); flushCards(); };
+    beats.forEach(b => {
+      if (b.role === 'chapter') { flush(); pages.push({ frames: [], chapter: (b.lines && b.lines.length) ? b.lines : [b.fid] }); }
+      else if (b.role === 'page') { flush(); pages.push({ frames: b.src ? [pageFrame(b)] : [], pageText: b.pageText }); }
+      else if (b.role === 'card') { flushPanels(); cardRun.push(b); }
+      else if (b.role === 'cards') { flush(); cardsBeatPages(b).forEach(p => pages.push(p)); }
+      else if (ar[b.src] && ar[b.src] < 0.85) { flush(); pages.push({ frames: [pageFrame(b)] }); }  // portrait image → its own page
+      else { flushCards(); row.push(b); if (row.length === ROWS) flushPanels(); }
+    });
+    flush();
+
+    return {
+      format: 'comic-starter/page-layout', version: 1, source: SOURCE,
+      trim: { w: 157, h: 240, unit: 'mm' }, bleed: 3, quiet: 5,
+      generated: new Date().toISOString(), pages
+    };
+  }
+
+  // ── Persistence ───────────────────────────────────────────────────────────
+  let history = [], hIdx = -1;
+  function save() {
+    const json = JSON.stringify(layout);
+    try { localStorage.setItem(STORE, json); } catch (e) {}
+    history = history.slice(0, hIdx + 1); history.push(json);          // record for undo
+    if (history.length > 80) history.shift();
+    hIdx = history.length - 1;
+    const st = document.getElementById('status'); st.textContent = 'saved ✓';
+    clearTimeout(save._t); save._t = setTimeout(() => st.textContent = '', 1200);
+  }
+  function applyHistory() {
+    layout = JSON.parse(history[hIdx]);
+    if (current >= layout.pages.length) current = layout.pages.length - 1;
+    selected = null;
+    try { localStorage.setItem(STORE, history[hIdx]); } catch (e) {}   // don't re-push
+    render();
+  }
+  function undo() { if (hIdx > 0) { hIdx--; applyHistory(); } }
+  function redo() { if (hIdx < history.length - 1) { hIdx++; applyHistory(); } }
+  function loadSaved() { try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  function guides() {
+    const g = document.createElement('div'); g.className = 'guides';
+    g.innerHTML = '<div class="g-bleed"></div><div class="g-quiet"></div><div class="g-trim"></div><div class="g-safe"></div>';
+    return g;
+  }
+  function makeFrame(f) {
+    const el = document.createElement('div');
+    el.className = 'frame' + (f.card ? ' card' : '') + (f.dir === 'h' ? ' horizontal' : '') + (f.variant ? ' ' + f.variant : ''); el.dataset.id = f.fid;
+    el.style.left = f.x + '%'; el.style.top = f.y + '%'; el.style.width = f.w + '%'; el.style.height = f.h + '%';
+    if (f.rot) el.style.setProperty('--rot', f.rot + 'deg');
+    if (f.src) { const img = document.createElement('img'); img.src = f.src; img.alt = ''; el.appendChild(img); }
+    const body = f.card ? document.createElement('div') : el;     // cards wrap text so it can sit beside the image
+    if (f.card) { body.className = 'card-body'; el.appendChild(body); }
+    (f.prims || []).forEach(p => {
+      const pr = document.createElement('div');
+      pr.className = 'prim ' + p.type + ' ' + p.pos;
+      pr.textContent = p.text;
+      body.appendChild(pr);
+    });
+    (f.lines || []).forEach((t, i) => {                            // text-only card items (cards container)
+      const pr = document.createElement('div');
+      pr.className = 'prim ' + (i === 0 ? 'label' : 'caption');
+      pr.textContent = t;
+      body.appendChild(pr);
+    });
+    el.__f = f;                                                    // frame ref for commit; Moveable + Selecto handle drag/resize/select
+    return el;
+  }
+  function render() {
+    const stage = document.getElementById('stage'); stage.innerHTML = '';
+    layout.pages.forEach((pg, i) => {
+      const pageEl = document.createElement('div');
+      pageEl.className = 'page' + (i === current ? ' current' : '');
+      pg.frames.forEach(f => pageEl.appendChild(makeFrame(f)));
+      if (pg.chapter) {
+        const ct = document.createElement('div'); ct.className = 'chapter-title';
+        pg.chapter.forEach(line => { const d = document.createElement('div'); d.textContent = line; ct.appendChild(d); });
+        pageEl.appendChild(ct);
+      }
+      if (pg.pageText && pg.pageText.length) {
+        const pt = document.createElement('div'); pt.className = 'page-text' + (pg.frames.length ? '' : ' full');
+        pg.pageText.forEach((t, i) => { const d = document.createElement('div'); d.className = i === 0 ? 'pt-head' : 'pt-body'; d.textContent = t; pt.appendChild(d); });
+        pageEl.appendChild(pt);
+      }
+      if (pg.cardsHeader) { const h = document.createElement('div'); h.className = 'cards-head'; pg.cardsHeader.forEach((t, i) => { const d = document.createElement('div'); d.className = i === 0 ? 'ch-kicker' : 'ch-sub'; d.textContent = t; h.appendChild(d); }); pageEl.appendChild(h); }
+      if (pg.cardsFooter) { const f = document.createElement('div'); f.className = 'cards-foot'; f.textContent = pg.cardsFooter.join('  '); pageEl.appendChild(f); }
+      pageEl.appendChild(guides());
+      stage.appendChild(pageEl);
+    });
+    if (mv) { mv.target = []; selected = null; }                  // selection resets on re-render (targets are new elements)
+    document.getElementById('pageno').textContent = (current + 1) + '/' + layout.pages.length;
+    document.getElementById('prev').disabled = current === 0;
+    document.getElementById('next').disabled = current === layout.pages.length - 1;
+  }
+
+  // ── Drag / resize whole frame-groups ────────────────────────────────────────
+  function select(id) { selected = id; document.querySelectorAll('.frame').forEach(e => e.classList.toggle('selected', e.dataset.id === id)); }
+  function onDown(e, el, f, mode, corner) {
+    e.preventDefault(); select(f.fid);
+    const pr = el.closest('.page').getBoundingClientRect(), er = el.getBoundingClientRect();
+    drag = { el, f, mode, corner, pr, startX: e.clientX, startY: e.clientY, left: er.left - pr.left, top: er.top - pr.top, width: er.width, height: er.height };
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+  }
+  function onMove(e) {
+    if (!drag) return;
+    const W = drag.pr.width, H = drag.pr.height, THR = 7;        // px snap threshold
+    // Snap guides on each axis: bleed edge / trim / safe / centre.
+    const gx = [0, W*3/163, W*8/163, W/2, W*(1-8/163), W*(1-3/163), W];
+    const gy = [0, H*3/246, H*8/246, H/2, H*(1-8/246), H*(1-3/246), H];
+    const near = (v, gs) => { let b = v, bd = THR; for (const g of gs) { const d = Math.abs(v - g); if (d < bd) { bd = d; b = g; } } return b; };
+    let { left, top, width, height } = drag;
+    if (drag.mode === 'move') {
+      const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+      left = Math.max(0, Math.min(drag.left + dx, W - width));
+      top  = Math.max(0, Math.min(drag.top + dy, H - height));
+      // Snap whichever edge or centre line is closest to a guide.
+      const shift = (pos, len, gs) => { let s = 0, bd = THR; for (const v of [pos, pos + len, pos + len / 2]) for (const g of gs) { const d = g - v; if (Math.abs(d) < bd) { bd = Math.abs(d); s = d; } } return pos + s; };
+      left = shift(left, width, gx); top = shift(top, height, gy);
+    } else {
+      const MINW = 30, MINH = 20, c = drag.corner || 'se';
+      const px = near(Math.max(0, Math.min(e.clientX - drag.pr.left, W)), gx);   // snap dragged corner to guides
+      const py = near(Math.max(0, Math.min(e.clientY - drag.pr.top,  H)), gy);
+      const sL = drag.left, sT = drag.top, sR = drag.left + drag.width, sB = drag.top + drag.height;
+      let l, t, r, b;
+      if (c.includes('w')) { l = Math.min(px, sR - MINW); r = sR; } else { l = sL; r = Math.max(px, sL + MINW); }
+      if (c.includes('n')) { t = Math.min(py, sB - MINH); b = sB; } else { t = sT; b = Math.max(py, sT + MINH); }
+      left = l; top = t; width = r - l; height = b - t;
+    }
+    const f = drag.f, el = drag.el;
+    f.x = +(left / W * 100).toFixed(2);  el.style.left = f.x + '%';
+    f.y = +(top  / H * 100).toFixed(2);  el.style.top  = f.y + '%';
+    if (drag.mode === 'resize') {
+      f.w = +(width  / W * 100).toFixed(2); el.style.width  = f.w + '%';
+      f.h = +(height / H * 100).toFixed(2); el.style.height = f.h + '%';
+    }
+  }
+  function onUp() { if (drag) { drag = null; save(); } window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); }
+
+  function goPage(i) { current = Math.max(0, Math.min(i, layout.pages.length - 1)); selected = null; render(); }
+
+  // Re-grid the current page's cards into N columns (vertical/horizontal restack).
+  function reflowCols(cols) {
+    const pg = layout.pages[current], cards = pg.frames.filter(f => f.card);
+    if (!cards.length) return;
+    const PW = 163, PH = 246, BLEED = 3, GUT = 2.4;
+    const trimX = BLEED / PW * 100, trimY = BLEED / PH * 100, trimW = (PW - 2 * BLEED) / PW * 100, trimH = (PH - 2 * BLEED) / PH * 100;
+    const top = trimY + (pg.cardsHeader ? 14 : 0), bottom = trimY + trimH - (pg.cardsFooter ? 9 : 0);
+    const rows = Math.ceil(cards.length / cols), cellW = trimW / cols, cellH = (bottom - top) / rows;
+    cards.forEach((f, idx) => {
+      const c = idx % cols, r = Math.floor(idx / cols);
+      f.x = +(trimX + c * cellW + GUT / 2).toFixed(2); f.y = +(top + r * cellH + GUT / 2).toFixed(2);
+      f.w = +(cellW - GUT).toFixed(2); f.h = +(cellH - GUT).toFixed(2);
+    });
+    save(); render();
+  }
+
+  // Flip the current page's cards between stacked (image over text) and side-by-side (image | text).
+  function setCardDir(dir) {
+    const cards = layout.pages[current].frames.filter(f => f.card);
+    if (!cards.length) return;
+    cards.forEach(f => f.dir = dir);
+    save(); render();
+  }
+
+  // Phase-1 broad strokes: move the selected frame to an adjacent page, and
+  // add/remove pages so you can re-pack frames across the comic.
+  function moveFrameToPage(delta) {
+    if (!selected) return;
+    const target = current + delta;
+    if (target < 0 || target >= layout.pages.length) return;
+    const src = layout.pages[current].frames, i = src.findIndex(f => f.fid === selected);
+    if (i < 0) return;
+    const [f] = src.splice(i, 1);
+    f.x = 0; f.y = 0;                       // land at the top of the target page, ready to place
+    layout.pages[target].frames.push(f);
+    current = target; save(); render();     // follow it; stays selected
+  }
+  function addPage() { layout.pages.splice(current + 1, 0, { id: 'p' + Date.now(), frames: [] }); current++; selected = null; save(); render(); }
+  function delPage() {
+    if (layout.pages.length <= 1) return;
+    if (layout.pages[current].frames.length) { alert('This page still has frames — move them off first.'); return; }
+    layout.pages.splice(current, 1); current = Math.max(0, current - 1); selected = null; save(); render();
+  }
+
+  // ── Cast: re-type the selected frame into another primitive, then re-render ──
+  // The one operation behind the palette: select a frame, pick a primitive, the
+  // frame adopts it. All casts here are field flips render() already honours
+  // (card/dir, prim.type) plus the structural page-cast — no new render code.
+  const TEXT_TYPES = ['speech', 'thought', 'caption', 'label'];
+  function selectedFrameEl() {
+    const t = mv && mv.target, el = Array.isArray(t) ? t[0] : t;
+    return (el && el.classList && el.classList.contains('frame')) ? el : null;
+  }
+  function applyCast(f, type) {
+    if (type === 'panel') { f.card = false; delete f.dir; return true; }       // plain full-width image frame
+    if (type === 'card')  { f.card = true; return true; }                      // compact card (image over text)
+    if (type === 'page') {                                                     // pull onto its own new page, full-bleed splash
+      const pg = layout.pages[current], i = pg.frames.indexOf(f);
+      if (i < 0) return false;
+      pg.frames.splice(i, 1);
+      f.card = false; delete f.dir; f.x = 0; f.y = 0; f.w = 100; f.h = 100;
+      layout.pages.splice(current + 1, 0, { frames: [f] }); current += 1;
+      return true;
+    }
+    if (TEXT_TYPES.includes(type)) {                                           // recast (or add) the frame's text primitive
+      if (f.prims && f.prims.length) f.prims.forEach(p => p.type = type);
+      else if (f.lines && f.lines.length) return 'lines';                      // list-text card — recast not handled yet
+      else f.prims = [{ type, pos: 'top-left', text: 'New ' + type }];
+      return true;
+    }
+    return false;
+  }
+  function castSelected(type) {
+    const el = selectedFrameEl();
+    if (!el) { toast('select a frame first'); return; }
+    const f = el.__f;
+    const r = applyCast(f, type);
+    if (r === 'lines') { toast('that card uses list text — recast n/a yet'); return; }
+    if (!r) { toast('can’t cast that'); return; }
+    save(); render(); reselectFrame(f);
+  }
+  function reselectFrame(f) {                                                  // re-target Moveable to the same frame's new element
+    if (!mv) return;
+    const el = [...document.querySelectorAll('.frame')].find(e => e.__f === f);
+    if (!el) return;
+    mv.target = el;
+    if (mv.selfElement && !mv.selfElement.parentElement) document.getElementById('stage').appendChild(mv.selfElement);
+    mv.updateRect(); selected = f.fid;
+  }
+  function toast(m) { const st = document.getElementById('status'); st.textContent = m; clearTimeout(toast._t); toast._t = setTimeout(() => st.textContent = '', 1500); }
+
+  // ── Export / import the layout overlay ──────────────────────────────────────
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'layout-v' + layout.version + '-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+  function importJSON(file) {
+    const r = new FileReader();
+    r.onload = () => { try { layout = JSON.parse(r.result); current = 0; selected = null; save(); render(); } catch (e) { alert('Not a valid layout JSON.'); } };
+    r.readAsText(file);
+  }
+
+  // ── Moveable (transform handles) + Selecto (marquee multi-select) ───────────
+  function commitFrame(el) {
+    const f = el.__f; if (!f) return;
+    const pr = el.closest('.page').getBoundingClientRect(), er = el.getBoundingClientRect();
+    f.x = +((er.left - pr.left) / pr.width * 100).toFixed(2);
+    f.y = +((er.top - pr.top) / pr.height * 100).toFixed(2);
+    f.w = +(er.width / pr.width * 100).toFixed(2);
+    f.h = +(er.height / pr.height * 100).toFixed(2);
+  }
+  function setupEditor() {
+    const stage = document.getElementById('stage');
+    mv = new Moveable(stage, { draggable: true, resizable: true, origin: false, snappable: true, snapThreshold: 6, keepRatio: false });
+    if (mv.selfElement && !mv.selfElement.parentElement) stage.appendChild(mv.selfElement);   // vanilla build doesn't auto-attach its control box
+    const px = (el, p, v) => el.style[p] = v + 'px';
+    mv.on('drag', e => { px(e.target, 'left', e.left); px(e.target, 'top', e.top); });
+    mv.on('resize', e => { px(e.target, 'width', e.width); px(e.target, 'height', e.height); px(e.target, 'left', e.drag.left); px(e.target, 'top', e.drag.top); });
+    mv.on('dragEnd', e => { if (e.isDrag) { commitFrame(e.target); save(); } });
+    mv.on('resizeEnd', e => { if (e.lastEvent) { commitFrame(e.target); save(); } });
+    mv.on('dragGroup', e => e.events.forEach(ev => { px(ev.target, 'left', ev.left); px(ev.target, 'top', ev.top); }));
+    mv.on('dragGroupEnd', e => { e.events.forEach(ev => commitFrame(ev.target)); save(); });
+    mv.on('resizeGroup', e => e.events.forEach(ev => { px(ev.target, 'width', ev.width); px(ev.target, 'height', ev.height); px(ev.target, 'left', ev.drag.left); px(ev.target, 'top', ev.drag.top); }));
+    mv.on('resizeGroupEnd', e => { e.events.forEach(ev => commitFrame(ev.target)); save(); });
+
+    // Click a frame to select it (Moveable shows the handles); click empty space to deselect.
+    stage.addEventListener('mousedown', e => {
+      if (mv.isMoveableElement(e.target)) return;                   // let Moveable handle its own control box
+      const fr = e.target.closest('.frame');
+      mv.target = fr || null;
+      if (mv.selfElement && !mv.selfElement.parentElement) stage.appendChild(mv.selfElement);  // selfElement is created lazily on first target
+      mv.updateRect();
+      selected = fr ? fr.__f.fid : null;
+    });
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+  document.getElementById('prev').onclick = () => goPage(current - 1);
+  document.getElementById('next').onclick = () => goPage(current + 1);
+  document.getElementById('addpage').onclick = addPage;
+  document.getElementById('delpage').onclick = delPage;
+  document.getElementById('toprev').onclick = () => moveFrameToPage(-1);
+  document.getElementById('tonext').onclick = () => moveFrameToPage(1);
+  document.querySelectorAll('.toolbar [data-cols]').forEach(b => b.onclick = () => reflowCols(+b.dataset.cols));
+  document.querySelectorAll('.toolbar [data-dir]').forEach(b => b.onclick = () => setCardDir(b.dataset.dir));
+  document.querySelectorAll('#palette [data-cast]').forEach(b => b.onclick = () => castSelected(b.dataset.cast));
+  window.addEventListener('keydown', e => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    if (e.key === '[') moveFrameToPage(-1);
+    else if (e.key === ']') moveFrameToPage(1);
+  });
+  document.getElementById('undo').onclick = undo;
+  document.getElementById('redo').onclick = redo;
+  document.getElementById('guides').onclick = () => document.body.classList.toggle('no-guides');
+  document.getElementById('export').onclick = exportJSON;
+  document.getElementById('import').onclick = () => document.getElementById('import-file').click();
+  document.getElementById('import-file').onchange = e => e.target.files[0] && importJSON(e.target.files[0]);
+  document.getElementById('print').onclick = () => window.print();
+  document.getElementById('reimport').onclick = async () => {
+    if (!confirm('Re-import from comic.html? This rebuilds the auto-flow and replaces the current layout.')) return;
+    document.getElementById('status').textContent = 'importing…';
+    layout = await importFromMaster(); current = 0; selected = null; save(); render();
+  };
+
+  (async function boot() {
+    try {
+      layout = loadSaved() || await importFromMaster();
+      save(); render(); setupEditor();
+    } catch (e) {
+      document.getElementById('stage').innerHTML = '<div class="loading">Import failed: ' + e.message +
+        '<br><br>Serve this from the comic folder so it can read ./comic.html and ./images.</div>';
+    }
+  })();
+</script>
+</body>
+</html>

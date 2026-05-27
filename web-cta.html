@@ -1,0 +1,119 @@
+<!-- web-cta.html — end-of-comic conversion block, injected into index.html by publish.js (web-only).
+     Wired to the existing storefront backend: /api/sold-count (KV), /api/subscribe (Resend),
+     the £20 Stripe payment link, and Ko-fi. Conversion tactics: end-of-read placement (peak intent),
+     reciprocity, real scarcity + a live progress bar, anchored primary (£20) vs easy fallback (coffee),
+     author presence beside the ask. -->
+<section class="webcta">
+  <style>
+    .webcta { background:#0e0f12; color:#f2ead0; padding:66px 20px 88px; border-top:1px solid rgba(200,118,30,.22); }
+    .webcta .wrap { max-width:600px; margin:0 auto; text-align:center; }
+    .webcta .kick { font-family:var(--font-mono),monospace; font-size:12px; letter-spacing:.26em; text-transform:uppercase; color:rgba(232,217,176,.6); }
+    .webcta h2 { font-family:var(--font-serif),Georgia,serif; font-weight:700; font-size:clamp(24px,5vw,34px); line-height:1.18; color:#f6f2e6; margin:14px 0 12px; }
+    .webcta h3 { font-family:var(--font-serif),Georgia,serif; font-weight:700; font-size:clamp(20px,4.4vw,27px); color:#f6f2e6; margin:22px 0 10px; }
+    .webcta p { font-family:var(--font-serif),Georgia,serif; font-size:clamp(15px,3.6vw,17px); line-height:1.6; color:#d4c8aa; margin:0 0 18px; }
+    .webcta strong { color:#f6f2e6; }
+    .webcta .hero { margin:30px auto 8px; max-width:460px; box-shadow:0 16px 40px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.4); border:1px solid #111; }
+    .webcta .hero img { width:100%; height:auto; display:block; }
+    /* live scarcity: counter + progress bar */
+    .webcta .sold { max-width:380px; margin:18px auto 22px; font-family:var(--font-mono),monospace; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#d4c8aa; }
+    .webcta .bar { height:7px; border-radius:4px; background:rgba(232,217,176,.12); overflow:hidden; margin-bottom:8px; }
+    .webcta .bar > i { display:block; height:100%; background:var(--gold,#c8761e); width:3%; transition:width .6s ease; }
+    .webcta .sold b { color:var(--gold,#c8761e); }
+    /* primary CTA */
+    .webcta .buy { display:inline-block; padding:18px 34px; background:var(--gold,#c8761e); color:#140d04; text-decoration:none; font-family:var(--font-mono),monospace; font-size:clamp(15px,4vw,18px); letter-spacing:.1em; font-weight:700; border-radius:5px; box-shadow:0 8px 22px rgba(0,0,0,.55); }
+    .webcta .buy:hover { filter:brightness(1.08); }
+    .webcta .fine { font-family:var(--font-mono),monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:rgba(232,217,176,.5); margin-top:12px; }
+    .webcta .fine a { color:var(--gold,#c8761e); }
+    /* author */
+    .webcta .author { display:flex; flex-direction:column; gap:14px; align-items:center; text-align:center; margin:46px auto; padding-top:34px; border-top:1px solid rgba(232,217,176,.12); max-width:480px; }
+    .webcta .author img { width:96px; height:140px; object-fit:cover; border:2px solid #111; box-shadow:0 6px 16px rgba(0,0,0,.5); flex:0 0 auto; }
+    .webcta .author p { font-size:14.5px; margin:8px 0 12px; }
+    .webcta .socials a { display:inline-block; margin-right:10px; font-family:var(--font-mono),monospace; font-size:12px; color:#f2ead0; text-decoration:none; border-bottom:1px solid var(--gold,#c8761e); }
+    /* secondary: ko-fi */
+    .webcta .kofi { display:inline-block; margin-top:6px; padding:13px 24px; background:transparent; color:var(--gold,#c8761e); border:1px solid var(--gold,#c8761e); border-radius:5px; text-decoration:none; font-family:var(--font-mono),monospace; font-size:14px; letter-spacing:.08em; font-weight:700; }
+    .webcta .kofi:hover { background:rgba(200,118,30,.12); }
+    /* waitlist */
+    .webcta form { max-width:380px; margin:14px auto 0; }
+    .webcta input { width:100%; box-sizing:border-box; padding:13px 15px; border:1px solid #5a4a35; background:#15110b; color:#f2ead0; font-family:var(--font-serif),Georgia,serif; font-size:15px; border-radius:5px; margin-bottom:12px; }
+    .webcta form button { width:100%; padding:13px; background:transparent; color:#d4c8aa; border:1px solid #5a4a35; border-radius:5px; font-family:var(--font-mono),monospace; font-size:13px; letter-spacing:.1em; cursor:pointer; }
+    .webcta form button:hover { color:#f2ead0; border-color:#8a6a3a; }
+    .webcta .err { display:none; margin-top:10px; color:#e07a6a; font-family:var(--font-serif),Georgia,serif; font-size:14px; }
+    .webcta .ok { display:none; margin:14px auto 0; max-width:380px; padding:18px; border:1px solid var(--gold,#c8761e); background:rgba(200,118,30,.07); font-family:var(--font-serif),Georgia,serif; color:#f6f2e6; }
+    .webcta .divider { font-family:var(--font-mono),monospace; font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:rgba(232,217,176,.45); margin:44px 0 18px; }
+  </style>
+
+  <div class="wrap">
+    <div class="kick">The End — Digger №01</div>
+    <h2>You just read the whole thing, free.</h2>
+    <p>If it was worth your time, there are two ways to keep Digger going.</p>
+
+    <!-- PRIMARY: the £20 first edition -->
+    <div class="hero"><img src="images/palomar_lights_comic.webp" alt="The Palomar Lights — first edition print, signed and numbered."></div>
+    <h3>Own the first edition, in print.</h3>
+    <p>Signed and numbered. Just <strong>150 copies</strong> — when they're gone, they're gone.</p>
+
+    <div class="sold" id="sold-counter" data-sold="4" data-cap="150">
+      <div class="bar"><i style="width:3%"></i></div>
+      <span><b data-sold-num>4</b> / 150 sold · <span data-sold-left>146</span> left</span>
+    </div>
+
+    <a class="buy" href="https://buy.stripe.com/aFa9ATddIgzj2NTgUl93y01?client_reference_id=end" target="_blank" rel="noopener">Pre-order the first edition — £20 →</a>
+    <div class="fine">Ships UK · EU · US · Canada · Australia · NZ · Japan &nbsp;·&nbsp; questions? <a href="mailto:hello@phillyharper.com">hello@phillyharper.com</a></div>
+
+    <!-- author presence beside the ask -->
+    <div class="author">
+      <img src="images/author.webp" alt="Phil Harper, author of The Palomar Lights.">
+      <div>
+        <div class="kick">Made by Phil</div>
+        <p>I'm Phil. I make Digger Comics and write <em>The Digger</em> on Substack — this comic is a new format I'm trialling.</p>
+        <div class="socials"><a href="https://twitter.com/phillyharper" target="_blank" rel="noopener">Twitter →</a><a href="https://philharper.substack.com" target="_blank" rel="noopener">Substack →</a></div>
+      </div>
+    </div>
+
+    <!-- SECONDARY: ko-fi as the easy, anchored alternative -->
+    <p>Not ready for the print? <strong>Buy me a coffee</strong> instead — it funds Digger №02.</p>
+    <a class="kofi" href="https://ko-fi.com/phillyharper" target="_blank" rel="noopener">☕ Buy me a Ko-fi →</a>
+
+    <!-- waitlist -->
+    <div class="divider">— or just stay in the loop —</div>
+    <p>Want to know when Digger №02 lands? Drop your email — nothing else, ever.</p>
+    <form id="digger-waitlist" action="/api/subscribe" method="POST">
+      <input type="email" name="email" required placeholder="you@somewhere.com">
+      <input type="hidden" name="intent_next" value="1">
+      <button type="submit" id="digger-submit">Tell me when №02 ships</button>
+      <div class="err" id="digger-error"></div>
+    </form>
+    <div class="ok" id="digger-success">You're on the list. I'll email when Digger №02 ships — nothing else.</div>
+  </div>
+
+  <script>
+    (function () {
+      // live sold-count + progress bar (degrades to the fallback if the API isn't there)
+      fetch('/api/sold-count').then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || typeof d.sold !== 'number') return;
+        var c = document.getElementById('sold-counter'); if (!c) return;
+        var cap = parseInt(c.getAttribute('data-cap'), 10) || 150;
+        var n = c.querySelector('[data-sold-num]'), l = c.querySelector('[data-sold-left]'), bar = c.querySelector('.bar > i');
+        if (n) n.textContent = String(d.sold);
+        if (l) l.textContent = String(typeof d.remaining === 'number' ? d.remaining : cap - d.sold);
+        if (bar) bar.style.width = Math.max(2, Math.min(100, Math.round(d.sold / cap * 100))) + '%';
+      }).catch(function () {});
+      // waitlist
+      var form = document.getElementById('digger-waitlist'); if (!form) return;
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var btn = document.getElementById('digger-submit'), err = document.getElementById('digger-error'), ok = document.getElementById('digger-success');
+        err.style.display = 'none'; btn.disabled = true; btn.textContent = 'SENDING…';
+        fetch('/api/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ email: form.email.value.trim(), intent_next: 1 }) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (res) {
+            if (res.ok && res.body && res.body.ok) { form.style.display = 'none'; ok.style.display = 'block'; }
+            else { btn.disabled = false; btn.textContent = 'Tell me when №02 ships';
+              err.textContent = (res.body && res.body.error === 'invalid_email') ? 'That email looks off — try again?' : 'Something went wrong — try again in a moment?';
+              err.style.display = 'block'; }
+          }).catch(function () { btn.disabled = false; btn.textContent = 'Tell me when №02 ships'; err.textContent = 'Network error — try again?'; err.style.display = 'block'; });
+      });
+    })();
+  </script>
+</section>

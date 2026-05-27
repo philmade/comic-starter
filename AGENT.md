@@ -234,6 +234,25 @@ When inserting new frames, use these. Each frame has a unique `data-frame-id` an
 
 ---
 
+## Layout roles — how a frame lays out for print
+
+Every beat is a frame; the frame declares **how it wants to be laid out** for
+print via `data-layout` (read by the print layout editor's importer / auto-flow).
+This is the print-side counterpart to the on-screen design — the web view ignores it.
+
+| Role | `data-layout` | Behaviour in auto-flow |
+|---|---|---|
+| **panel** *(default)* | *(none)* | Tiles into the page grid (3 rows). Landscape art fills the trim width; square/portrait stays aspect-correct and centred. |
+| **page** | `page` | Owns a whole page. Not gridded — the composition is preserved (cover fills the page; others fit aspect-correct, centred). Use for designed full-page beats: the cover, a published-paper plate, an evidence figure, a standalone quote. |
+| **chapter** | `chapter` | A `page` that is also a **chapter boundary**. Rendered as a title page (the frame's text lines, centred); panels restart on a fresh page after it, so chapters never bleed into one another. Auto-detected on `.chapter-break` frames; `data-layout="chapter"` makes it explicit. |
+
+Auto-flow walks the beats in document order: `panel`s fill 3-up; a `page` or
+`chapter` beat flushes the current page and takes its own. Migrate un-roled beats
+by adding `data-layout` (and, for chapters, real label primitives) — don't push
+heuristics into the importer.
+
+---
+
 ## Image naming convention
 
 Every image file lives in `images/` and is named:
