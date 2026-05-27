@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comic Starter — Primitives Catalog</title>
+<link rel="stylesheet" href="comic.css">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #17181c; color: #e8e8ea; font-family: 'Inter', system-ui, sans-serif; }
+  header.cat { padding: 26px 32px 18px; border-bottom: 1px solid #2a2b32; position: sticky; top: 0; background: rgba(23,24,28,.94); backdrop-filter: blur(6px); z-index: 100; }
+  header.cat h1 { margin: 0; font-size: 20px; letter-spacing: .01em; }
+  header.cat p { margin: 7px 0 0; color: #9a9ba3; font-size: 13px; max-width: 760px; line-height: 1.5; }
+  header.cat a.back { color: #7ed957; text-decoration: none; font-weight: 600; }
+  header.cat code { background: #262830; padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #cdd2da; }
+  section.grp { padding: 26px 32px; border-bottom: 1px solid #23242a; }
+  section.grp > h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: #7ed957; }
+  section.grp > .sub { margin: 0 0 20px; color: #8a8b93; font-size: 12.5px; max-width: 720px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 22px; align-items: start; }
+  figure.cell { margin: 0; }
+  figure.cell > code { display: block; font-family: 'Special Elite', monospace; font-size: 11px; color: #aeb4c0; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage { background: #f6f4ef; border-radius: 5px; padding: 16px; position: relative; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .stage.dark { background: #0a0b0e; }
+  .stage.center { align-items: center; }
+  /* In FLOW cells, let prims/page-blocks sit in normal flow instead of absolute. */
+  .cell.flow .prim, .cell.flow .cards-head, .cell.flow .cards-foot, .cell.flow .chapter-title, .cell.flow .page-text {
+    position: relative !important; transform: none !important; inset: auto !important;
+    left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; max-width: 100% !important; margin: 0 !important; }
+  .cell .frame { position: relative !important; }
+  /* layout-primitive wireframe thumbnails */
+  .wire { display: grid; gap: 6px; background: #f6f4ef; border-radius: 5px; padding: 10px; aspect-ratio: 157/240; }
+  .wire > span { background: #cfc8b8; border: 1px solid #b3aa95; border-radius: 2px; }
+  .wire.l-2 { grid-template-rows: 1fr 1fr; }
+  .wire.l-3 { grid-template-rows: 1fr 1fr 1fr; }
+  .wire.l-vert { grid-template-rows: 1fr; }
+  .wire.l-full { grid-template-rows: 1fr; padding: 0; }
+  .wire.l-full > span { border-radius: 5px; }
+  .wire.l-2x2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .coming { color: #8a8b93; font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="cat">
+  <h1>Comic Starter — Primitives Catalog</h1>
+  <p>Every primitive and variant in <code>comic.css</code>, rendered live. Each label is the exact class recipe — type it in <code>working.html</code>, or select an element in the editor and cast it. &nbsp; <a class="back" href="editor.html">← back to editor</a></p>
+</header>
+
+<section class="grp">
+  <h2>Frames</h2>
+  <p class="sub">Image containers, positioned by inline % on the page. <code>object-fit: cover</code> — frame aspect = image aspect means no crop.</p>
+  <div class="grid">
+    <figure class="cell"><code>.frame</code><div class="stage"><div class="frame" style="width:100%; height:150px"><img src="catalog-sample.svg" alt=""></div></div></figure>
+    <figure class="cell"><code>.frame.card</code><div class="stage"><div class="frame card" style="width:100%"><img src="catalog-sample.svg" alt=""><div class="card-body"><div class="prim label">LABEL</div><div class="prim caption">Caption sits beneath the image.</div></div></div></div></figure>
+    <figure class="cell"><code>.frame.card.horizontal</code><div class="stage"><div class="frame card horizontal" style="width:100%; height:120px"><img src="catalog-sample.svg" alt=""><div class="card-body"><div class="prim label">SIDE BY SIDE</div><div class="prim caption">Image left, text right.</div></div></div></div></figure>
+    <figure class="cell"><code>.frame.card.polaroid · --rot</code><div class="stage center"><div class="frame card polaroid" style="width:160px; --rot:-3deg"><img src="catalog-sample.svg" alt=""><div class="card-body"><div class="prim label">POLAROID</div></div></div></div></figure>
+    <figure class="cell"><code>.frame.card.clipping · --accent</code><div class="stage"><div class="frame card clipping" style="width:100%; --rot:-1.5deg; --accent:#c8102e"><div class="card-body"><div class="prim label">THE OUTLET</div><div class="prim caption">A press-cutting headline.</div></div></div></div></figure>
+    <figure class="cell"><code>.frame.matted · --mat</code><div class="stage"><div class="frame matted" style="width:100%; height:150px; --mat:#fff"><img src="catalog-sample.svg" alt=""></div></div></figure>
+    <figure class="cell"><code>.frame.stroked</code><div class="stage"><div class="frame stroked" style="width:100%; height:150px"><img src="catalog-sample.svg" alt=""></div></div></figure>
+    <figure class="cell"><code>.frame.cropped (img zoom/pan)</code><div class="stage"><div class="frame cropped" style="width:100%; height:150px"><img src="catalog-sample.svg" alt="" style="object-position:72% 30%; transform-origin:72% 30%; transform:scale(1.6)"></div></div></figure>
+    <figure class="cell"><code>.frame.embed</code><div class="stage"><div class="frame embed" style="width:100%; height:150px"><div class="embed-inner" style="display:grid; place-items:center; color:#7d8aa6; font:12px 'Special Elite',monospace">[ embedded HTML / SVG / animation ]</div></div></div></figure>
+  </div>
+</section>
+
+<section class="grp">
+  <h2>Text primitives</h2>
+  <p class="sub">Editable text. On a real page each carries a position class (below). <code>.hl</code> is an inline gold emphasis span.</p>
+  <div class="grid">
+    <figure class="cell flow"><code>.prim.caption</code><div class="stage"><div class="prim caption">A caption — the workhorse narration box.</div></div></figure>
+    <figure class="cell flow"><code>.prim.label</code><div class="stage"><div class="prim label">A LABEL TAG</div></div></figure>
+    <figure class="cell flow"><code>.prim.quote</code><div class="stage"><div class="prim quote">An editorial pull-quote.<span class="cite">— Attribution</span></div></div></figure>
+    <figure class="cell flow"><code>.prim.quote.boxed</code><div class="stage"><div class="prim quote boxed">A boxed pull-quote.<span class="cite">— Attribution</span></div></div></figure>
+    <figure class="cell flow"><code>.prim.quote.typewriter</code><div class="stage"><div class="prim quote typewriter">A typewriter-voice quote.<span class="cite">— Source</span></div></div></figure>
+    <figure class="cell flow"><code>.prim.speech</code><div class="stage center"><div class="prim speech">A speech bubble.</div></div></figure>
+    <figure class="cell flow"><code>.prim.thought</code><div class="stage center"><div class="prim thought">A thought bubble.</div></div></figure>
+    <figure class="cell flow"><code>.prim.title</code><div class="stage"><div class="prim title">Big Title</div></div></figure>
+    <figure class="cell flow"><code>.prim.title.gold</code><div class="stage"><div class="prim title gold">Gold Title</div></div></figure>
+    <figure class="cell flow"><code>.prim.title.sub</code><div class="stage"><div class="prim title sub">Sub-header</div></div></figure>
+    <figure class="cell flow"><code>.prim.title.typewriter</code><div class="stage"><div class="prim title typewriter">Typewriter Header</div></div></figure>
+    <figure class="cell flow"><code>.prim.punch</code><div class="stage"><div class="prim punch">A punch line.</div></div></figure>
+    <figure class="cell flow"><code>.hl (inline)</code><div class="stage"><div class="prim caption">A number like <span class="hl">9 sources</span> highlighted inline.</div></div></figure>
+  </div>
+</section>
+
+<section class="grp">
+  <h2>Primitive positions</h2>
+  <p class="sub">Any text prim takes one position class to anchor it within (or below) its frame.</p>
+  <div class="grid">
+    <figure class="cell"><code>.top-left / .top-center / .top-right · .bottom-* · .middle-center · .below-frame</code>
+      <div class="stage"><div class="frame" style="width:100%; height:240px"><img src="catalog-sample.svg" alt="">
+        <div class="prim caption top-left">top-left</div>
+        <div class="prim caption top-center">top-center</div>
+        <div class="prim caption top-right">top-right</div>
+        <div class="prim caption middle-center">middle-center</div>
+        <div class="prim caption bottom-left">bottom-left</div>
+        <div class="prim caption bottom-center">bottom-center</div>
+        <div class="prim caption bottom-right">bottom-right</div>
+      </div></div>
+    </figure>
+  </div>
+</section>
+
+<section class="grp">
+  <h2>Page-level blocks</h2>
+  <p class="sub">Full-width structural blocks (titles, narration, stat rows, headers/footers).</p>
+  <div class="grid">
+    <figure class="cell flow"><code>.chapter-title (on .page.dark)</code><div class="stage dark"><div class="chapter-title"><div class="ct-eyebrow">70 years later.</div><div class="ct-number">Chapter 1</div><div class="ct-title">The Vanishing</div></div></div></figure>
+    <figure class="cell flow"><code>.page-text</code><div class="stage"><div class="page-text"><div class="pt-head">SECTION HEAD</div><div class="pt-body">Typewriter body narration for a page.</div></div></div></figure>
+    <figure class="cell flow"><code>.page-text.lead</code><div class="stage"><div class="page-text lead"><div class="pt-body">A serif lead paragraph, for an editorial opening beat.</div></div></div></figure>
+    <figure class="cell flow"><code>.page-text.framed</code><div class="stage"><div class="page-text framed"><div class="pt-body">A narration block inside a cream frame.</div></div></div></figure>
+    <figure class="cell flow"><code>.cards-head</code><div class="stage"><div class="cards-head"><div class="ch-kicker">THE EVIDENCE</div><div class="ch-sub">A kicker plus a sub-line introducing a spread.</div></div></div></figure>
+    <figure class="cell flow"><code>.cards-foot</code><div class="stage"><div class="cards-foot">A small centred footnote / source line.</div></div></figure>
+    <figure class="cell flow"><code>.stat-trio</code><div class="stage"><div class="stat-trio"><div class="stat"><div class="num gold">9</div><div class="lbl">SOURCES</div></div><div class="stat"><div class="num">1950</div><div class="lbl">PLATE</div></div><div class="stat"><div class="num">0</div><div class="lbl">TODAY</div></div></div></div></figure>
+  </div>
+</section>
+
+<section class="grp">
+  <h2>Layout primitives <span class="coming">— next: insertable page templates</span></h2>
+  <p class="sub">Whole-page starting points you'll drop in from the editor, then fill. A growable library.</p>
+  <div class="grid">
+    <figure class="cell"><code>2-frame</code><div class="wire l-2"><span></span><span></span></div></figure>
+    <figure class="cell"><code>3-frame</code><div class="wire l-3"><span></span><span></span><span></span></div></figure>
+    <figure class="cell"><code>2×2 grid</code><div class="wire l-2x2"><span></span><span></span><span></span><span></span></div></figure>
+    <figure class="cell"><code>full-bleed</code><div class="wire l-full"><span></span></div></figure>
+    <figure class="cell"><code>9:16 vertical</code><div class="wire l-vert"><span style="aspect-ratio:9/16; align-self:center; width:64%; margin:0 auto"></span></div></figure>
+  </div>
+</section>
+
+</body>
+</html>
